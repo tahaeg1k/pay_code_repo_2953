@@ -46,6 +46,31 @@ Add `OPENROUTER_API_KEY` (OpenRouter's Anthropic-compatible endpoint, models `an
                                "env": {"SCOPEPAY_URL": "http://localhost:8001"}}}}
   ```
 
+## ScopePay Relief: donor pots and relief codes
+The same engine, used to coordinate money between many people after a disaster. Open http://localhost:8001/relief and
+press **Load the Al Haouz demo** (donors, households and shops are fictional; village locations are approximate).
+- **Donors** (`/relief`) give to a named pot and see where every pound went: a map from donor cities to the pot, to each
+  household, to the local shop where it was spent, a flow diagram, and a replay of the first days. Each donor gets a receipt
+  listing the households their money reached.
+- **The relief office** (`/relief/office`) sets the policy (amount per household, goods covered, how long codes last, how
+  much Claude may issue alone), decides referred claims, registers households it has verified, and revokes codes.
+- **People affected** (`/relief/claim`) describe what happened and can add a photo. Fixed rules run first (area,
+  household size, duplicates, hidden instructions), then Claude reviews the claim and the photo. Claude can issue a code
+  within the policy or refer the claim to a person. It can lower an amount but never raise it, can't widen the goods
+  allowed, and can't refuse anyone: a refusal is always a person's decision. Any AI failure becomes a referral.
+- **Local shops** (`/relief/shop`) charge relief codes at the till. Prices come from the shop's list on the server; goods
+  outside the code's categories (cigarettes, phone credit, perfume) are refused. With an AI key, Claude also checks the
+  basket against the pot's purpose and can hold it for the office.
+- **Every pound is traceable.** Donations are allocated to codes oldest first, each purchase records whose donation paid
+  for it, and unspent money returns to the pot when a code expires or is revoked. Every step is a signed record on the
+  same evidence chain.
+- **Privacy.** Donors see a first name and story only if the person agreed; otherwise "A household in <village>". Phone
+  numbers and photos never leave the office console, and evidence records carry only hashes of them.
+
+Money is simulated by default. `RELIEF_PAYMENTS=paypal` takes donations through PayPal Orders and pays shops with
+Payouts (set `RELIEF_*_PAYEE_EMAIL` to sandbox business accounts). `RELIEF_OFFICE_KEY` protects the office endpoints.
+Tests: `python -m pytest -q tests/test_relief.py`.
+
 ## Money safety
 - **No overspending under load.** The amount is reserved on the code (under a lock) before PayPal is called, so parallel
   payments can't spend past the cap, and no write can overwrite another.

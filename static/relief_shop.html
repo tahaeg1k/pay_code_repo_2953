@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relief till</title>
+<link rel="stylesheet" href="/static/style.css?v=5"><link rel="stylesheet" href="/static/relief.css?v=1">
+</head><body class="relief">
+<header></header>
+<main id="main"><section class="card muted">Loading…</section></main>
+<script src="/static/relief_common.js?v=1"></script>
+<script>
+R.nav('shop');
+const $ = id => document.getElementById(id);
+let OPT, shop, products = [], basket = {}, info = null;
+
+boot();
+async function boot() {
+  OPT = await R.api('/api/relief/options');
+  shop = new URLSearchParams(location.search).get('m') || OPT.merchants[0].id;
+  $('main').innerHTML = `
+  <div class="rhead"><div><div class="eyebrow">Shop till · relief codes accepted</div><h1 id="sname"></h1><p id="skind"></p></div>
+    <div class="shoppick" id="pick"></div></div>
+  <div class="till">
+    <section><div class="prods" id="prods"></div>
+      <p class="privacy">Prices come from the shop's list held by ScopePay, so a till can't change them. Items marked "not covered" are refused for relief codes.</p></section>
+    <aside class="receipt" id="rcpt"></aside>
+  </div>`;
+  await pickShop(shop);
+}
+
+async function pickShop(id) {
+  shop = id; basket = {}; info = null;
+  const r = await R.api('/api/relief/catalog/' + id);
+  products = r.products;
+  $('sname').textContent = r.merchant.name;
+  $('skind').textContent = `${r.merchant.kind} in ${OPT.merchants.find(m => m.id === id).place.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}. Paid from the relief pot when a customer pays with a code.`;
+  $('pick').innerHTML = OPT.merchants.map(m => `<button class="${m.id === id ? 'on' : ''}" onclick="pickShop('${m.id}')">${R.esc(m.name)}</button>`).join('');
+  const u = new URL(location.href); u.searchParams.set('m', id); history.replaceState(null, '', u);
+  drawProducts(); drawReceipt();
+}
+
+function drawProducts() {
+  $('prods').innerHTML = products.map(p => {
+    const covered = !!p.category, ok = !info || !covered || info.categories.includes(p.category);
+    return `<div class="prod ${covered ? '' : 'dim'}">
+      <span class="tag ${covered && ok ? 'yes' : 'no'}">${covered ? (ok ? R.esc(p.category_name) : R.esc(p.category_name) + ' · not on this code') : 'Not covered'}</span>
+      <span class="pn">${R.esc(p.name)}</span><span class="pp">${R.gbp(p.price)}</span>
+      ${basket[p.product_id] ? `<div class="stepper" style="border-color:var(--leaf)"><button style="background:var(--leaf)" onclick="add('${p.product_id}',-1)">−</button><span style="color:var(--leaf)">${basket[p.product_id]}</span><button style="background:var(--leaf)" onclick="add('${p.product_id}',1)">+</button></div>`
+        : `<button class="add" onclick="add('${p.product_id}',1)">Add</button>`}</div>`;
+  }).join('');
+}
+
+function add(id, n) { basket[id] = Math.max(0, (basket[id] || 0) + n); if (!basket[id]) delete basket[id]; drawProducts(); drawReceipt(); }
+function total() { return Object.entries(basket).reduce((a, [id, q]) => a + products.find(p => p.product_id === id).price * q, 0); }
+
+function drawReceipt(result) {
+  const lines = Object.entries(basket).map(([id, q]) => ({p: products.find(p => p.product_id === id), q}));
+  $('rcpt').innerHTML = `<h2>Basket</h2>
+    ${lines.length ? lines.map(({p, q}) => `<div class="line"><span><span class="qty">${q}×</span> ${R.esc(p.name)}</span><span>${R.gbp(p.price * q)}</span></div>`).join('') : '<p class="muted">Add what the customer is buying.</p>'}
+    <hr><div class="total"><span>Total</span><span>${R.gbp(total())}</span></div>
+    <label for="code">Relief code</label><input id="code" placeholder="RC-XXXX-XXXX-XXXX" value="${R.esc(window._code || '')}" oninput="window._code=this.value" onchange="check()">
+    <div class="codecheck" id="cc">${info ? codeLine() : ''}</div>
+    <button id="pay" style="background:var(--leaf);border-color:var(--leaf)" onclick="pay(this)" ${lines.length ? '' : 'disabled'}>Charge ${R.gbp(total())} to the code</button>
+    <div id="out">${result || ''}</div>`;
+}
+function codeLine() {
+  if (info.status === 'unknown') return '<div class="notice bad">This code is not recognised.</div>';
+  return `<div class="notice ${info.status === 'active' ? 'ok' : 'bad'}">${info.status === 'active' ? `${R.gbp(info.remaining)} left · covers ${R.esc(info.category_names.join(', ').toLowerCase())}` : 'This code is ' + R.esc(info.status)}</div>`;
+}
+async function check() {
+  const c = $('code').value.trim(); if (!c) { info = null; drawProducts(); return; }
+  info = await R.api('/api/relief/codes/check', {method: 'POST', body: {code: c}});
+  $('cc').innerHTML = codeLine(); drawProducts();
+}
+async function pay(btn) {
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    const r = await R.api('/api/relief/redeem', {method: 'POST', body: {code: $('code').value.trim(), merchant_id: shop,
+      items: Object.entries(basket).map(([product_id, qty]) => ({product_id, qty}))}});
+    let html;
+    if (r.approved) { html = `<div class="outcome"><div class="big" style="background:var(--leaf)">✓</div><h3>Paid ${R.gbp(r.amount)}</h3><p>${R.esc(r.paid_to)}</p><a class="btnlink" href="/evidence/${r.evidence_id}" target="_blank">Signed record ${r.evidence_id}</a></div>`; basket = {}; }
+    else if (r.held) html = `<div class="outcome bad" style="border-color:var(--warn);background:var(--warn-soft)"><h3>Waiting for the relief office</h3><p>${R.esc(r.reason)}</p></div>`;
+    else html = `<div class="outcome bad"><div class="stampbox">Refused</div><p>${R.esc(r.reason.replace(/^[a-z_]+: /, ''))}</p><a class="btnlink" href="/evidence/${r.evidence_id}" target="_blank">Signed record ${r.evidence_id}</a></div>`;
+    if ($('code').value.trim()) info = await R.api('/api/relief/codes/check', {method: 'POST', body: {code: $('code').value.trim()}});
+    drawProducts(); drawReceipt(html);
+  } catch (e) { drawReceipt(`<div class="notice bad">${R.esc(e.message)}</div>`); }
+}
+</script>
+</body></html>

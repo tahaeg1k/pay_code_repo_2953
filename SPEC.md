@@ -104,3 +104,13 @@ YouTube demo under 3 min, no third-party trademarks or music.
   Default HOLD_MODE=app. `tests/test_attacks.py` (23 attack tests); 56 offline tests pass. Existing trail (14 unsigned
   records) still verifies. Not yet run live: HOLD_MODE=authorize against the sandbox.
 - AI provider (Nov 6): ai.py uses OpenRouter's Anthropic-compatible endpoint when OPENROUTER_API_KEY is set (models anthropic/claude-haiku-5.5, anthropic/claude-sonnet-5.5), else Anthropic directly; AI_PROVIDER / AI_*_MODEL override. 34 offline tests pass.
+- ScopePay Relief (Nov 6, branch relief-pots): `relief.py` + `relief_demo.py` + pages `static/relief*.html`. Named donor pots
+  (simulated money by default; RELIEF_PAYMENTS=paypal uses Orders for donations and Payouts for shops), an office console
+  (policy, referred claims, direct registration, revoke, held baskets, live activity), a claim page (rules, then Claude
+  reviews text + photo; Claude may issue up to the office's auto-issue limit, can lower but never raise amounts, never
+  refuses; failures refer), a shop till (server prices, goods categories per item), and a donor dashboard (map: donor
+  cities -> pot -> households -> shops, flow diagram, replay, receipts per donation). FIFO allocation of donations to codes,
+  per-purchase attribution, expiry/revoke returns money to the pot. Public view and evidence records carry no names
+  (first name only with consent), phones or photos. Al Haouz demo seed. tests/test_relief.py: 21 tests; 78 offline tests
+  pass. Not yet run live: Claude claim review with a real key, RELIEF_PAYMENTS=paypal against the sandbox.
+

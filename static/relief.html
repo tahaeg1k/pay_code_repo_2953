@@ -1,0 +1,433 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay Relief</title>
+<link rel="stylesheet" href="/static/style.css?v=5"><link rel="stylesheet" href="/static/relief.css?v=1">
+</head><body class="relief">
+<header></header>
+<main id="main"><section class="card muted">Loading…</section></main>
+<div class="tip" id="tip"></div>
+<script src="/static/relief_common.js?v=1"></script>
+<script>
+R.nav('donors');
+const $ = id => document.getElementById(id);
+const W = 1000, H = 640;
+let D, POT, view = 'map', tNow = Infinity, T0 = 0, T1 = 0, playing = null, amount = 50, selected = null, OPT;
+
+boot();
+async function boot() {
+  try {
+    POT = await R.pot();
+    if (!POT) return R.empty($('main'));
+    [D, OPT] = await Promise.all([R.api('/api/relief/pots/' + POT.id), R.api('/api/relief/options')]);
+  } catch (e) { $('main').innerHTML = `<section class="card"><div class="notice bad">${R.esc(e.message)}</div></section>`; return; }
+  T0 = D.timeline.length ? D.timeline[0].t : 0;
+  T1 = D.timeline.length ? D.timeline[D.timeline.length - 1].t : 0;
+  tNow = T1;
+  render();
+  const don = new URLSearchParams(location.search).get('donation');
+  if (don && don.startsWith('DON-')) showReceipt(don);
+}
+
+function render() {
+  const p = D.pot, t = D.totals;
+  $('main').innerHTML = `
+  <div class="rhead">
+    <div><div class="eyebrow">Relief pot · run by ${R.esc(p.authority)}${p.mode === 'simulated' ? '<span class="demo-tag">Demo money</span>' : ''}</div>
+      <h1>${R.esc(p.name)}</h1><p>${R.esc(p.description)}</p></div>
+    <span class="trail ${D.chain.valid ? 'ok' : 'bad'}" title="Every donation, decision and purchase is a signed, hash-chained record">${D.chain.valid ? '🔒 ' + D.chain.records + ' signed records, chain verified' : '⚠ evidence chain broken'}</span>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="mapgrid">
+    <section class="card mapcard">
+      <div class="maptabs">
+        <button class="tab ${view === 'map' ? 'on' : ''}" onclick="setView('map')">Map</button>
+        <button class="tab ${view === 'flow' ? 'on' : ''}" onclick="setView('flow')">Where every pound went</button>
+        <span class="sp"></span><small id="viewnote"></small>
+      </div>
+      <div class="mapwrap" id="mapwrap"></div>
+      <div class="replay">
+        <button id="play" onclick="togglePlay()" aria-label="Replay the first days">${icon('play')}</button>
+        <input type="range" id="slider" min="0" max="1000" value="1000" aria-label="Time" oninput="scrub(this.value)">
+        <span class="when" id="when"></span>
+      </div>
+      <div class="feed" id="feed"></div>
+    </section>
+    <aside class="panel">
+      <section class="card detail" id="detail"></section>
+      <section class="card" id="donate"></section>
+    </aside>
+  </div>
+  <section>
+    <div class="sechead"><h2>The households</h2><small>${R.esc(D.privacy)}</small></div>
+    <div class="people" id="people"></div>
+  </section>
+  <div class="grid2">
+    <section class="card"><h2>What the money bought</h2><div class="cats-bars" id="cats"></div>
+      <p class="privacy">Spent at local shops in the valley, so the money also keeps village businesses going.</p></section>
+    <section class="card"><h2>How it works</h2><div class="howto">
+      <p><b>1. You give</b> to this pot. The money sits with the relief office, not with a middleman.</p>
+      <p><b>2. The office turns it into relief codes</b> for households: a fixed amount, for essentials only, that expires.</p>
+      <p><b>3. People can ask for help</b> themselves. Fixed rules check the claim, then Claude reviews it. Claude can issue a code within the office's limits, or pass it to a person. It can never refuse anyone or go over the limits.</p>
+      <p><b>4. The code is spent at a local shop.</b> Cigarettes, phone credit or perfume are refused at the till. Unspent money returns to the pot when a code expires.</p>
+      <p><b>5. You see it all</b>, here, down to each basket, backed by <a href="/api/evidence">signed records</a>.</p></div></section>
+  </div>`;
+  drawStats(); drawView(); drawPeople(); drawCats(); drawDonate(); setTime(tNow);
+  if (!selected) drawHowTo();
+}
+
+function icon(n) {
+  return n === 'play' ? '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="#fff"/></svg>'
+    : '<svg width="14" height="14" viewBox="0 0 14 14"><rect x="2.5" y="2" width="3" height="10" fill="#fff"/><rect x="8.5" y="2" width="3" height="10" fill="#fff"/></svg>';
+}
+
+// ---------- numbers at a point in time (for the replay) ----------
+function totalsAt(t) {
+  if (t >= T1) return D.totals;
+  let raised = 0, donors = new Set(), countries = new Set(), issued = 0, households = 0, people = 0, spent = 0;
+  for (const e of D.timeline) {
+    if (e.t > t) break;
+    if (e.kind === 'donation') { raised += e.amount; const d = D.donors.find(x => x.id === e.id); donors.add(e.id); if (d) countries.add(d.country); }
+    if (e.kind === 'code') { issued += e.amount; households++; const p = D.people.find(x => x.id === e.id); people += p ? p.household : 0; }
+    if (e.kind === 'purchase') spent += e.amount;
+  }
+  return {raised, donors: donors.size, countries: countries.size, issued, households, people_helped: people, spent,
+          outstanding: issued - spent, available: raised - issued};
+}
+function drawStats() {
+  const t = totalsAt(tNow), r = t.raised || 1;
+  $('stats').innerHTML = `
+    <div class="stat hero"><b>${R.gbp0(t.raised)}</b><span>given by ${t.donors} donors in ${t.countries} countries</span>
+      <div class="bar3"><i style="width:${t.spent / r * 100}%;background:#7EE2B8"></i><i style="width:${(t.outstanding) / r * 100}%;background:#E7A27F"></i><i style="flex:1;background:rgba(255,255,255,.18)"></i></div>
+      <div class="legend" style="color:#B9C6DC;gap:10px"><span><i style="background:#7EE2B8"></i>spent</span><span><i style="background:#E7A27F"></i>on codes</span><span><i style="background:rgba(255,255,255,.3)"></i>in pot</span></div></div>
+    <div class="stat"><b>${t.households}</b><span>households have a relief code (${t.people_helped} people)</span></div>
+    <div class="stat"><b>${R.gbp0(t.spent)}</b><span>spent at local shops on essentials</span></div>
+    <div class="stat"><b>${R.gbp0(t.available)}</b><span>in the pot, ready for the next households</span></div>`;
+}
+
+// ---------- map ----------
+function setView(v) { view = v; document.querySelectorAll('.maptabs .tab').forEach((b, i) => b.classList.toggle('on', (i === 0) === (v === 'map'))); drawView(); setTime(tNow); }
+function drawView() { view === 'map' ? drawMap() : drawFlow(); }
+
+function regionProjection() {
+  const pts = [...D.places, ...D.shops];
+  let la0 = Math.min(...pts.map(p => p.lat)), la1 = Math.max(...pts.map(p => p.lat));
+  let lo0 = Math.min(...pts.map(p => p.lon)), lo1 = Math.max(...pts.map(p => p.lon));
+  const box = {x: 590, y: 40, w: 380, h: 540}, k = Math.cos((la0 + la1) / 2 * Math.PI / 180);
+  const padLa = (la1 - la0) * .1 + .02, padLo = (lo1 - lo0) * .1 + .02;
+  la0 -= padLa; la1 += padLa; lo0 -= padLo; lo1 += padLo;
+  let s = Math.min(box.h / (la1 - la0), box.w / ((lo1 - lo0) * k));
+  const cx = (lo0 + lo1) / 2, cy = (la0 + la1) / 2;
+  const f = (lat, lon) => [box.x + box.w / 2 + (lon - cx) * k * s, box.y + box.h / 2 - (lat - cy) * s];
+  f.bounds = {la0: cy - box.h / 2 / s, la1: cy + box.h / 2 / s, lo0: cx - box.w / 2 / (k * s), lo1: cx + box.w / 2 / (k * s)};
+  return f;
+}
+const INSET = {x: 26, y: 34, w: 452, h: 250, lo0: -78, lo1: 60, la0: 10, la1: 58};
+function insetProj(lat, lon) {
+  const s = Math.min(INSET.w / (INSET.lo1 - INSET.lo0), INSET.h / (INSET.la1 - INSET.la0));
+  const ox = INSET.x + (INSET.w - (INSET.lo1 - INSET.lo0) * s) / 2, oy = INSET.y + (INSET.h - (INSET.la1 - INSET.la0) * s) / 2;
+  return [ox + (lon - INSET.lo0) * s, oy + (INSET.la1 - lat) * s];
+}
+
+function drawMap() {
+  const P = regionProjection(), b = P.bounds, hub = [520, 250];
+  const out = [];
+  out.push(`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of donations, households and shops">`);
+  // region graticule
+  out.push('<g class="g-grid">');
+  for (let la = Math.ceil(b.la0 * 10) / 10; la < b.la1; la += .1) { const y = P(la, b.lo0)[1]; out.push(`<line x1="590" x2="975" y1="${y}" y2="${y}"/><text x="976" y="${y - 4}" text-anchor="end">${la.toFixed(1)}°N</text>`); }
+  for (let lo = Math.ceil(b.lo0 * 10) / 10; lo < b.lo1; lo += .1) { const x = P(b.la0, lo)[0]; out.push(`<line y1="30" y2="596" x1="${x}" x2="${x}"/><text x="${x + 4}" y="610">${Math.abs(lo).toFixed(1)}°W</text>`); }
+  out.push('</g>');
+  // the world inset: where the money comes from
+  const anchor = insetProj(D.pot.region.lat, D.pot.region.lon);
+  out.push(`<rect class="inset-frame" x="${INSET.x - 8}" y="${INSET.y - 8}" width="${INSET.w + 16}" height="${INSET.h + 34}" rx="12"/>
+    <text class="inset-title" x="${INSET.x}" y="${INSET.y + INSET.h + 18}">Where the money comes from</text>`);
+  out.push('<g class="g-grid">');
+  for (let la = 10; la <= 60; la += 10) { const y = insetProj(la, 0)[1]; out.push(`<line x1="${INSET.x}" x2="${INSET.x + INSET.w}" y1="${y}" y2="${y}" stroke-dasharray="2 3"/>`); }
+  for (let lo = -80; lo <= 60; lo += 20) { const x = insetProj(0, lo)[0]; out.push(`<line y1="${INSET.y}" y2="${INSET.y + INSET.h}" x1="${x}" x2="${x}" stroke-dasharray="2 3"/>`); }
+  out.push('</g>');
+  const byCity = {};
+  for (const d of D.donors) { const k = d.city + '|' + d.country; (byCity[k] = byCity[k] || {city: d.city, country: d.country, lat: d.lat, lon: d.lon, amount: 0, t: d.time, ids: []}); byCity[k].amount += d.amount; byCity[k].ids.push(d.id); byCity[k].t = Math.min(byCity[k].t, d.time); }
+  for (const d of D.donors) {
+    if (d.lat == null) continue;
+    const [x, y] = insetProj(d.lat, d.lon), mx = (x + anchor[0]) / 2, my = Math.min(y, anchor[1]) - 18 - Math.hypot(x - anchor[0], y - anchor[1]) * .25;
+    out.push(`<path class="arc ${d.amount >= 300 ? 'big' : ''}" data-t="${d.time}" d="M${x},${y} Q${mx},${my} ${anchor[0]},${anchor[1]}"/>`);
+  }
+  for (const c of Object.values(byCity)) {
+    if (c.lat == null) continue;
+    const [x, y] = insetProj(c.lat, c.lon), r = 3.5 + Math.sqrt(c.amount) / 5;
+    out.push(`<circle class="donor-dot" data-t="${c.t}" data-sel="${c.ids.join(' ')}" cx="${x}" cy="${y}" r="${r}" onclick="selectCity('${R.esc(c.city)}')" onmousemove="tip(event,'<b>${R.esc(c.city)}, ${R.esc(c.country)}</b>${R.gbp0(c.amount)} from ${c.ids.length} donor${c.ids.length > 1 ? 's' : ''}')" onmouseleave="untip()"/>`);
+  }
+  const big = Object.values(byCity).sort((a, b) => b.amount - a.amount).slice(0, 9);
+  for (const c of big) { const [x, y] = insetProj(c.lat, c.lon); if (Math.hypot(x - anchor[0], y - anchor[1]) < 30) continue; out.push(`<text class="city-label" data-t="${c.t}" x="${x + 6}" y="${y - 5}">${R.esc(c.city)}</text>`); }
+  // trunk from the inset to the pot
+  const raised = D.totals.raised;
+  out.push(`<path d="M${anchor[0]},${anchor[1]} C${anchor[0] + 120},${anchor[1] + 40} ${hub[0] - 160},${hub[1] - 10} ${hub[0]},${hub[1]}" fill="none" stroke="var(--sky)" stroke-opacity=".35" stroke-width="${Math.max(3, Math.sqrt(raised) / 6)}" stroke-linecap="round" data-t="${T0}"/>`);
+  out.push(`<circle cx="${anchor[0]}" cy="${anchor[1]}" r="4" fill="var(--ink)"/>`);
+  // screen positions: households pushed apart so no two dots overlap
+  const shopXY = {}, XY = {}, R_ = {};
+  for (const s of D.shops) shopXY[s.id] = P(s.lat, s.lon);
+  for (const p of D.people) { XY[p.id] = P(p.lat, p.lon); R_[p.id] = 6 + Math.sqrt(p.received) / 1.9; }
+  const bodies = [...D.people.map(p => ({id: p.id, xy: XY[p.id], r: R_[p.id] + 5, fixed: false})),
+                  ...D.shops.map(s => ({id: s.id, xy: shopXY[s.id], r: 13, fixed: true}))];
+  for (let it = 0; it < 80; it++) for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    const A = bodies[i], B = bodies[j], dx = B.xy[0] - A.xy[0], dy = B.xy[1] - A.xy[1], d = Math.hypot(dx, dy) || .01, need = A.r + B.r;
+    if (d >= need) continue;
+    const push = (need - d) / 2, ux = dx / d, uy = dy / d;
+    if (!A.fixed) { A.xy[0] -= ux * push * (B.fixed ? 2 : 1); A.xy[1] -= uy * push * (B.fixed ? 2 : 1); }
+    if (!B.fixed) { B.xy[0] += ux * push * (A.fixed ? 2 : 1); B.xy[1] += uy * push * (A.fixed ? 2 : 1); }
+  }
+  // allocation lines pot -> household, spending lines household -> shop
+  for (const p of D.people) {
+    const [x, y] = XY[p.id], mx = (hub[0] + x) / 2 + (y - hub[1]) * .12, my = (hub[1] + y) / 2 - (x - hub[0]) * .12;
+    out.push(`<path class="alloc" data-t="${p.issued_at}" data-sel="${p.id}" d="M${hub[0]},${hub[1]} Q${mx},${my} ${x},${y}"/>`);
+  }
+  for (const p of D.people) for (const q of p.purchases) {
+    const shop = D.shops.find(s => s.name === q.merchant); if (!shop) continue;
+    const [x, y] = XY[p.id], [sx, sy] = shopXY[shop.id];
+    out.push(`<path class="spend" data-t="${q.time}" data-sel="${p.id} ${shop.id}" d="M${x},${y} L${sx},${sy}"/>`);
+  }
+  // village labels: try above, below, right, left of the village; keep the first spot that hits nothing
+  const boxes = bodies.map(b => [b.xy[0] - b.r + 3, b.xy[1] - b.r + 3, b.xy[0] + b.r - 3, b.xy[1] + b.r - 3]), labels = [];
+  const hit = (q) => boxes.some(o => q[0] < o[2] && q[2] > o[0] && q[1] < o[3] && q[3] > o[1]);
+  for (const pl of D.places) {
+    const [x, y] = P(pl.lat, pl.lon), w = pl.name.length * 6.6 + 4, h = 14;
+    const tries = [[x - w / 2, y - 22], [x - w / 2, y + 10], [x + 12, y - 7], [x - w - 12, y - 7], [x - w / 2, y - 40], [x - w / 2, y + 28], [x + 26, y - 26], [x - w - 26, y + 14]];
+    const inside = ([lx, ly]) => lx >= 560 && lx + w <= 976 && ly >= 30 && ly + h <= 596;
+    let pick = tries.find(t => inside(t) && !hit([t[0], t[1], t[0] + w, t[1] + h])) || tries.find(inside) || tries[0];
+    boxes.push([pick[0], pick[1], pick[0] + w, pick[1] + h]);
+    labels.push(`<text class="place-label" x="${pick[0] + w / 2}" y="${pick[1] + 11}" text-anchor="middle" paint-order="stroke" stroke="var(--sand)" stroke-width="4">${R.esc(pl.name)}</text>`);
+  }
+  // shops
+  for (const s of D.shops) {
+    const [x, y] = shopXY[s.id];
+    out.push(`<rect class="shop" data-sel="${s.id}" x="${x - 8}" y="${y - 8}" width="16" height="16" rx="4" onclick="selectShop('${s.id}')" onmousemove="tip(event,'<b>${R.esc(s.name)}</b>${R.esc(s.kind)} · received ${R.gbp0(s.received)}')" onmouseleave="untip()"/>`);
+  }
+  // households: dot size = code value, green ring = share spent
+  for (const p of D.people) {
+    const [x, y] = XY[p.id], r = R_[p.id], c = 2 * Math.PI * (r + 3.5), f = p.received ? p.spent / p.received : 0;
+    out.push(`<g data-t="${p.issued_at}" data-sel="${p.id}" style="cursor:pointer" onclick="selectPerson('${p.id}')" onmousemove="tip(event,'<b>${R.esc(p.label)}</b>${R.esc(p.place)} · ${p.household} people<br>${R.gbp0(p.received)} code · ${R.gbp0(p.spent)} spent')" onmouseleave="untip()">
+      <circle class="hh-ring" cx="${x}" cy="${y}" r="${r + 3.5}" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 ${x} ${y})"/>
+      <circle class="hh-dot ${p.named ? '' : 'anon'}" cx="${x}" cy="${y}" r="${r}"/>
+      ${p.named ? `<text x="${x}" y="${y + 4}" text-anchor="middle" style="font:700 ${Math.max(9, r * .8)}px var(--display);fill:#fff;pointer-events:none">${R.esc(p.label[0])}</text>` : ''}</g>`);
+  }
+  out.push(...labels);
+  // money path, bottom left
+  const lx = 34, ly = 360;
+  out.push(`<g id="ledger"><text class="inset-title" x="${lx}" y="${ly}">The money path</text>
+    ${[['lg-raised', 'Given', 'var(--sky)'], ['lg-codes', 'On relief codes', 'var(--earth)'], ['lg-spent', 'Spent at local shops', 'var(--leaf)']].map(([id, t, c], i) => `
+      <rect x="${lx}" y="${ly + 18 + i * 74}" width="6" height="52" rx="3" fill="${c}"/>
+      <text x="${lx + 20}" y="${ly + 40 + i * 74}" style="font:800 28px var(--display);fill:var(--ink)" id="${id}"></text>
+      <text x="${lx + 20}" y="${ly + 62 + i * 74}" style="font:500 12.5px var(--body);fill:var(--muted)" id="${id}-t">${t}</text>`).join('')}
+    <path d="M${lx + 3},${ly + 74} v16 M${lx + 3},${ly + 148} v16" stroke="var(--line)" stroke-width="2"/></g>`);
+  // the pot
+  out.push(`<circle class="pot-node" cx="${hub[0]}" cy="${hub[1]}" r="18" onclick="drawHowTo()" style="cursor:pointer"/><text x="${hub[0]}" y="${hub[1] + 4}" text-anchor="middle" style="font:800 11px var(--display);fill:#fff;pointer-events:none">£</text>
+    <text class="pot-label" x="${hub[0]}" y="${hub[1] - 24}" text-anchor="middle" paint-order="stroke" stroke="var(--sand)" stroke-width="4">The pot</text>
+    <text class="city-label" x="${hub[0]}" y="${hub[1] + 34}" text-anchor="middle" paint-order="stroke" stroke="var(--sand)" stroke-width="4">${R.esc(D.pot.region.name || 'held by the relief office')}</text>`);
+  out.push('</svg>');
+  $('mapwrap').innerHTML = out.join('');
+  $('viewnote').textContent = 'Dot size: value of the code · green ring: share spent · approximate locations';
+  highlight();
+}
+
+// ---------- flow (sankey) ----------
+function drawFlow() {
+  const cols = [[], [], [], []], links = [];
+  const byCountry = {};
+  for (const d of D.donors) byCountry[d.country] = (byCountry[d.country] || 0) + d.amount;
+  Object.entries(byCountry).sort((a, b) => b[1] - a[1]).forEach(([c, v]) => cols[0].push({id: 'c:' + c, label: c, v}));
+  cols[1].push({id: 'pot', label: 'The pot', v: D.totals.raised});
+  for (const c of cols[0]) links.push({s: c.id, t: 'pot', v: c.v, cls: 'sky'});
+  const people = [...D.people].sort((a, b) => b.received - a.received);
+  for (const p of people) { const v = p.received - p.returned; cols[2].push({id: p.id, label: p.label, v, person: p.id}); links.push({s: 'pot', t: p.id, v, cls: 'earth'}); }
+  if (D.totals.available > 0) { cols[2].push({id: 'avail', label: 'Still in the pot', v: D.totals.available, muted: true}); links.push({s: 'pot', t: 'avail', v: D.totals.available, cls: 'muted'}); }
+  const shopTot = {};
+  for (const f of D.flows.out) { shopTot[f.to] = (shopTot[f.to] || 0) + f.amount; links.push({s: f.from, t: 's:' + f.to, v: f.amount, cls: 'leaf'}); }
+  for (const s of D.shops) if (shopTot[s.id]) cols[3].push({id: 's:' + s.id, label: s.name, v: shopTot[s.id], shop: s.id});
+  let unspent = 0;
+  for (const p of people) { const v = p.received - p.returned - p.spent; if (v > .004) { links.push({s: p.id, t: 'unspent', v, cls: 'muted'}); unspent += v; } }
+  if (unspent > 0) cols[3].push({id: 'unspent', label: 'On codes, not spent yet', v: unspent, muted: true});
+  const X = [170, 410, 640, 790], NW = 12, top = 46, avail = H - top - 20;
+  const scale = Math.min(...cols.map(c => (avail - (c.length - 1) * (c.length > 8 ? 4 : 10)) / c.reduce((a, n) => a + n.v, 0)));
+  const nodes = {};
+  cols.forEach((col, i) => {
+    const gap = col.length > 8 ? 4 : 10, total = col.reduce((a, n) => a + Math.max(2, n.v * scale), 0) + gap * (col.length - 1);
+    let y = top + (avail - total) / 2;
+    for (const n of col) { n.x = X[i]; n.y = y; n.h = Math.max(2, n.v * scale); n.out = 0; n.in = 0; nodes[n.id] = n; y += n.h + gap; }
+  });
+  const color = {sky: 'var(--sky)', earth: 'var(--earth)', leaf: 'var(--leaf)', muted: '#9AA6B8'};
+  const out = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Flow of money from donor countries through the pot to households and shops">`];
+  ['Donor countries', 'Pot', 'Households', 'Shops'].forEach((h, i) => out.push(`<text class="sankey-head" x="${X[i] + (i === 0 ? NW : 0)}" y="26" text-anchor="${i === 0 ? 'end' : 'start'}">${h}</text>`));
+  for (const l of links) {
+    const a = nodes[l.s], b = nodes[l.t]; if (!a || !b) continue;
+    const h = Math.max(.8, l.v * scale), y0 = a.y + a.out + h / 2, y1 = b.y + b.in + h / 2; a.out += h; b.in += h;
+    const x0 = a.x + NW, x1 = b.x, mx = (x0 + x1) / 2;
+    const sel = [l.s, l.t].map(s => s.replace(/^s:/, '')).join(' ');
+    out.push(`<path class="band" data-sel="${sel}" d="M${x0},${y0 - h / 2} C${mx},${y0 - h / 2} ${mx},${y1 - h / 2} ${x1},${y1 - h / 2} L${x1},${y1 + h / 2} C${mx},${y1 + h / 2} ${mx},${y0 + h / 2} ${x0},${y0 + h / 2} Z" fill="${color[l.cls]}"
+      onmousemove="tip(event,'${R.esc(nodes[l.s].label)} → ${R.esc(nodes[l.t].label)}<br><b>${R.gbp(l.v)}</b>')" onmouseleave="untip()" ${l.cls === 'leaf' || l.cls === 'earth' ? `onclick="selectPerson('${l.cls === 'earth' ? l.t : l.s}')"` : ''}/>`);
+  }
+  cols.forEach((col, i) => col.forEach(n => {
+    const lx = i === 0 ? n.x - 8 : n.x + NW + 6, anchor = i === 0 ? 'end' : 'start';
+    const click = n.person ? `onclick="selectPerson('${n.person}')" style="cursor:pointer"` : n.shop ? `onclick="selectShop('${n.shop}')" style="cursor:pointer"` : '';
+    out.push(`<rect class="sankey-node" data-sel="${(n.person || n.shop || n.id)}" x="${n.x}" y="${n.y}" width="${NW}" height="${n.h}" rx="2" ${n.muted ? 'fill="#9AA6B8"' : ''} ${click}/>`);
+    if (n.h >= 9 || i !== 2 || col.length < 14) out.push(`<text class="sankey-label" x="${lx}" y="${n.y + n.h / 2 + 4}" text-anchor="${anchor}" paint-order="stroke" stroke="var(--sand)" stroke-width="3" ${click}>${R.esc(n.label)} <tspan class="v">${R.gbp0(n.v)}</tspan></text>`);
+  }));
+  out.push('</svg>');
+  $('mapwrap').innerHTML = out.join('');
+  $('viewnote').textContent = 'Band width = money. Every pound from a country to a shop.';
+  highlight();
+}
+
+// ---------- replay ----------
+function setTime(t) {
+  tNow = Math.min(t, T1);
+  const s = $('slider'); if (s && T1 > T0) s.value = Math.round((tNow - T0) / (T1 - T0) * 1000);
+  $('when').textContent = T1 ? (tNow >= T1 ? 'Now' : 'Hour ' + Math.max(0, Math.round((tNow - T0) / 3600)) + ' of the appeal') : '';
+  document.querySelectorAll('#mapwrap [data-t]').forEach(el => el.classList.toggle('hidden-t', +el.dataset.t > tNow + 1));
+  drawStats();
+  const tt = totalsAt(tNow), lg = (id, v, sub) => { const el = $(id); if (el) el.textContent = v; if (sub && $(id + '-t')) $(id + '-t').textContent = sub; };
+  lg('lg-raised', R.gbp0(tt.raised), `Given by ${tt.donors} donors`);
+  lg('lg-codes', R.gbp0(tt.issued), `On relief codes for ${tt.households} households`);
+  lg('lg-spent', R.gbp0(tt.spent), 'Spent at local shops');
+  const last = [...D.timeline].reverse().find(e => e.t <= tNow);
+  $('feed').innerHTML = last && tNow < T1 ? `<span>${R.esc(last.text)}</span>` : `<small>Press play to replay the first ${Math.max(1, Math.round((T1 - T0) / 3600))} hours: money arriving, codes issued, baskets bought.</small>`;
+}
+function scrub(v) { stopPlay(); setTime(T0 + (T1 - T0) * v / 1000); }
+function togglePlay() {
+  if (playing) return stopPlay();
+  if (view !== 'map') setView('map');
+  const dur = 22000, start = performance.now(), from = tNow >= T1 ? T0 : tNow, span = T1 - from;
+  $('play').innerHTML = icon('pause');
+  const step = now => {
+    const k = Math.min(1, (now - start) / dur);
+    setTime(from + span * k);
+    if (k < 1) playing = requestAnimationFrame(step); else stopPlay();
+  };
+  playing = requestAnimationFrame(step);
+}
+function stopPlay() { if (playing) cancelAnimationFrame(playing); playing = null; if ($('play')) $('play').innerHTML = icon('play'); }
+
+// ---------- tooltips and selection ----------
+function tip(e, html) { const t = $('tip'); t.innerHTML = html; t.style.opacity = 1; t.style.left = Math.min(innerWidth - 260, e.clientX + 14) + 'px'; t.style.top = (e.clientY + 14) + 'px'; t.style.position = 'fixed'; }
+function untip() { $('tip').style.opacity = 0; }
+function highlight() {
+  document.querySelectorAll('#mapwrap .sel').forEach(el => el.classList.remove('sel'));
+  if (!selected) { document.querySelectorAll('#mapwrap [data-sel]').forEach(el => el.style.opacity = ''); return; }
+  document.querySelectorAll('#mapwrap [data-sel]').forEach(el => {
+    const on = el.dataset.sel.split(' ').some(s => selected.ids.includes(s));
+    el.style.opacity = on ? '' : (el.classList.contains('band') ? .08 : .22);
+  });
+}
+function drawHowTo() {
+  selected = null; highlight();
+  $('detail').innerHTML = `<div class="kicker">How to read the map</div><h3>Follow the money</h3>
+    <div class="key">
+      <div><svg width="18" height="18"><circle cx="9" cy="9" r="6" class="donor-dot"/></svg>Donors, by city. Blue lines bring money to the pot.</div>
+      <div><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="var(--ink)"/></svg>The pot, held for the relief office.</div>
+      <div><svg width="18" height="18"><circle cx="9" cy="9" r="6" class="hh-dot"/></svg>A household with a relief code (filled: they chose to share their name).</div>
+      <div><svg width="18" height="18"><rect x="3" y="3" width="12" height="12" rx="3" class="shop"/></svg>A local shop. Green dashes are purchases.</div>
+    </div>
+    <p class="privacy">Click any dot for the details. ${R.esc(D.privacy)}</p>`;
+}
+function selectPerson(id) {
+  const p = D.people.find(x => x.id === id); if (!p) return;
+  selected = {kind: 'person', ids: [id]}; highlight();
+  const funders = D.flows.in.filter(f => f.to === id).map(f => ({d: D.donors.find(x => x.id === f.from), v: f.amount})).filter(x => x.d);
+  const f = p.received ? p.spent / p.received : 0;
+  $('detail').innerHTML = `<div class="kicker">${p.named ? 'Household' : 'Household (name kept private)'}</div>
+    <h3>${R.esc(p.label)}</h3><div class="where">${R.esc(p.place)} · ${p.household} ${p.household === 1 ? 'person' : 'people'}</div>
+    ${p.story ? `<blockquote>“${R.esc(p.story)}”</blockquote>` : ''}
+    <div class="gauge earth" style="margin-top:12px"><i style="width:${f * 100}%"></i></div>
+    <div class="kv"><span>Relief code</span><b>${R.gbp(p.received)}</b></div>
+    <div class="kv"><span>Spent</span><b>${R.gbp(p.spent)}</b></div>
+    ${p.returned ? `<div class="kv"><span>Returned to the pot</span><b>${R.gbp(p.returned)}</b></div>` : ''}
+    <div class="kv"><span>Issued by</span><b style="text-align:right">${R.esc(p.issued_by)}</b></div>
+    <div class="chips">${Object.entries(p.spent_by_category).map(([k, v]) => `<span class="chip leaf">${R.esc(D.pot.categories[k] || k)} ${R.gbp0(v)}</span>`).join('')}</div>
+    ${p.purchases.length ? `<ul class="buys">${p.purchases.map(q => `<li><div class="top"><span>${R.esc(q.merchant)}</span><span>${R.gbp(q.amount)}</span></div><small>${R.esc(q.items.join(', '))}</small><small>${R.when(q.time)} · <a href="/evidence/${q.evidence_id}" target="_blank">signed record ${q.evidence_id}</a></small></li>`).join('')}</ul>` : '<p class="muted" style="font-size:14px">Nothing bought yet.</p>'}
+    ${funders.length ? `<p style="font-size:13.5px;margin:14px 0 0"><b>Paid for by</b> ${funders.map(x => `${R.esc(x.d.label)} (${R.esc(x.d.city)}) ${R.gbp0(x.v)}`).join(', ')}</p>` : ''}`;
+}
+async function selectDonor(id, fromCity) {
+  const d = D.donors.find(x => x.id === id); if (!d) return;
+  const r = await R.api('/api/relief/donations/' + id);
+  selected = {kind: 'donor', ids: [id, ...r.helped.map(h => h.person)]}; highlight();
+  $('detail').innerHTML = donorCard(d, r, fromCity);
+}
+function donorCard(d, r, others) {
+  return `<div class="kicker">Donor</div><h3>${R.esc(d.label)}</h3><div class="where">${R.esc(d.city)}, ${R.esc(d.country)} · ${R.when(d.time)}</div>
+    ${d.message ? `<blockquote>“${R.esc(d.message)}”</blockquote>` : ''}
+    <div class="kv"><span>Gave</span><b>${R.gbp(r.amount)}</b></div>
+    <div class="kv"><span>On relief codes</span><b>${R.gbp(r.allocated)}</b></div>
+    <div class="kv"><span>Already spent at shops</span><b>${R.gbp(r.spent)}</b></div>
+    <div class="kv"><span>Waiting in the pot</span><b>${R.gbp(r.waiting)}</b></div>
+    ${r.helped.length ? `<p style="font-size:13.5px;margin:12px 0 4px"><b>Helped</b></p><div class="chips">${r.helped.map(h => `<span class="chip earth" style="cursor:pointer" onclick="selectPerson('${h.person}')">${R.esc(h.label)} · ${R.gbp0(h.amount)}</span>`).join('')}</div>` : '<p class="muted" style="font-size:14px">Not allocated yet: it goes to the next households the office helps.</p>'}
+    ${Object.keys(r.shops).length ? `<p style="font-size:13.5px;margin:12px 0 4px"><b>Spent at</b></p><div class="chips">${Object.entries(r.shops).map(([k, v]) => `<span class="chip leaf">${R.esc(k)} ${R.gbp0(v)}</span>`).join('')}</div>` : ''}
+    ${others || ''}
+    ${r.evidence_id ? `<p class="privacy"><a href="/evidence/${r.evidence_id}" target="_blank">Signed record of this donation</a></p>` : ''}`;
+}
+async function selectCity(city) {
+  const list = D.donors.filter(d => d.city === city);
+  if (list.length === 1) return selectDonor(list[0].id);
+  const r = await R.api('/api/relief/donations/' + list[0].id);
+  const others = `<p style="font-size:13.5px;margin:14px 0 4px"><b>All ${list.length} donors in ${R.esc(city)}</b></p><div class="chips">${list.map(d => `<span class="chip sky" style="cursor:pointer" onclick="selectDonor('${d.id}')">${R.esc(d.label)} ${R.gbp0(d.amount)}</span>`).join('')}</div>`;
+  selected = {kind: 'donor', ids: [list[0].id, ...r.helped.map(h => h.person)]}; highlight();
+  $('detail').innerHTML = donorCard(list[0], r, others);
+}
+function selectShop(id) {
+  const s = D.shops.find(x => x.id === id); if (!s) return;
+  const buys = D.people.flatMap(p => p.purchases.filter(q => q.merchant === s.name).map(q => ({...q, who: p.label, pid: p.id})));
+  selected = {kind: 'shop', ids: [id, ...buys.map(b => b.pid)]}; highlight();
+  $('detail').innerHTML = `<div class="kicker">Local shop · ${R.esc(s.kind)}</div><h3>${R.esc(s.name)}</h3>
+    <div class="kv"><span>Paid from the pot</span><b>${R.gbp(s.received)}</b></div>
+    <div class="chips">${s.categories.map(c => `<span class="chip">${R.esc(OPT.categories[c] || c)}</span>`).join('')}</div>
+    ${buys.length ? `<ul class="buys">${buys.sort((a, b) => b.time - a.time).map(q => `<li><div class="top"><span>${R.esc(q.who)}</span><span>${R.gbp(q.amount)}</span></div><small>${R.esc(q.items.join(', '))}</small></li>`).join('')}</ul>` : ''}`;
+}
+
+// ---------- households, categories ----------
+function drawPeople() {
+  $('people').innerHTML = D.people.length ? [...D.people].sort((a, b) => b.named - a.named || b.issued_at - a.issued_at).map(p => `
+    <div class="person" onclick="selectPerson('${p.id}');document.querySelector('.mapgrid').scrollIntoView({behavior:'smooth'})">
+      <div class="ptop"><div class="avatar ${p.named ? '' : 'anon'}">${p.named ? R.esc(R.initials(p.label)) : '·'}</div>
+        <div><b>${R.esc(p.label)}</b><small>${R.esc(p.place)} · ${p.household} ${p.household === 1 ? 'person' : 'people'}</small></div></div>
+      ${p.story ? `<div class="story">“${R.esc(p.story)}”</div>` : '<div class="story muted">Chose not to share their name or story.</div>'}
+      <div class="gauge earth"><i style="width:${p.received ? p.spent / p.received * 100 : 0}%"></i></div>
+      <div class="nums"><span>${R.gbp0(p.spent)} spent of ${R.gbp0(p.received)}</span><span>${p.purchases.length} purchase${p.purchases.length === 1 ? '' : 's'}</span></div>
+    </div>`).join('') : '<div class="empty-state">No households have codes yet.</div>';
+}
+function drawCats() {
+  const c = D.totals.spent_by_category, max = Math.max(1, ...Object.values(c));
+  $('cats').innerHTML = Object.keys(c).length ? Object.entries(c).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<div class="cbar"><span>${R.esc(OPT.categories[k] || k)}</span><span class="track"><i style="width:${v / max * 100}%"></i></span><b>${R.gbp0(v)}</b></div>`).join('')
+    : '<p class="muted">Nothing bought yet.</p>';
+}
+
+// ---------- donate ----------
+function drawDonate() {
+  const cities = Object.entries(OPT.cities).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  $('donate').innerHTML = `<h2>Give to this pot</h2>
+    <div class="amounts">${[20, 50, 100, 250].map(a => `<button class="${a === amount ? 'on' : ''}" onclick="pick(${a})">£${a}</button>`).join('')}</div>
+    <label for="amt">Amount (£)</label><input id="amt" type="number" min="1" step="1" value="${amount}" oninput="amount=+this.value;document.querySelectorAll('.amounts button').forEach(b=>b.classList.toggle('on',b.textContent==='£'+this.value));$('give').textContent='Give £'+(this.value||0)">
+    <label for="city">Where are you giving from?</label><select id="city">${cities.map(([k, c]) => `<option value="${k}" ${k === 'london' ? 'selected' : ''}>${R.esc(c.name)}, ${R.esc(c.country)}</option>`).join('')}</select>
+    <label for="dname">Your name (optional)</label><input id="dname" maxlength="80" placeholder="Shown only if you tick the box">
+    <label class="check"><input type="checkbox" id="dshow"> Show my name on the map</label>
+    <label for="dmsg">A message for the families (optional)</label><input id="dmsg" maxlength="200">
+    <button class="earth wide" id="give" onclick="give(this)">Give £${amount}</button>
+    <p class="privacy">${OPT.mode === 'paypal' ? 'You pay with PayPal (sandbox).' : 'Demo mode: no real money moves. Set RELIEF_PAYMENTS=paypal to pay through the PayPal sandbox.'} You get a receipt that shows which households your money reached.</p>
+    <div id="dres"></div>`;
+}
+function pick(a) { amount = a; $('amt').value = a; $('amt').oninput.call($('amt')); }
+async function give(btn) {
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await R.api(`/api/relief/pots/${POT.id}/donate`, {method: 'POST', body: {amount: +$('amt').value, city: $('city').value,
+      donor_name: $('dname').value, show_name: $('dshow').checked, message: $('dmsg').value}});
+    if (r.approve_url) { location.href = r.approve_url; return; }
+    const u = new URL(location.href); u.searchParams.set('pot', POT.id); u.searchParams.set('donation', r.donation_id); history.replaceState(null, '', u);
+    D = await R.api('/api/relief/pots/' + POT.id); T1 = D.timeline.length ? D.timeline[D.timeline.length - 1].t : T1; tNow = T1;
+    render(); showReceipt(r.donation_id, true);
+  } catch (e) { $('dres').innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`; btn.disabled = false; btn.textContent = 'Give £' + amount; }
+}
+async function showReceipt(id, fresh) {
+  const d = D.donors.find(x => x.id === id); if (!d) return;
+  await selectDonor(id);
+  $('detail').insertAdjacentHTML('afterbegin', `<div class="notice ok" style="margin:0 0 12px">${fresh ? 'Thank you. ' : ''}This is your receipt. Bookmark this page to see where your money goes as codes are issued and spent.</div>`);
+}
+</script>
+</body></html>

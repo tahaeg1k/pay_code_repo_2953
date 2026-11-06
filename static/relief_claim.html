@@ -1,0 +1,138 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ask for help</title>
+<link rel="stylesheet" href="/static/style.css?v=5"><link rel="stylesheet" href="/static/relief.css?v=1">
+</head><body class="relief">
+<header></header>
+<main id="main"><section class="card muted">Loading…</section></main>
+<script src="/static/relief_common.js?v=1"></script>
+<script>
+R.nav('claim');
+const $ = id => document.getElementById(id);
+let POT, PLACES = [], OPT, photo = null;
+const CHECK_NAMES = {pot_open: 'The appeal is open', place_in_area: 'Your village is covered', household_size: 'Household size',
+  contact_given: 'Phone number', text_clean: 'Message is readable', evidence_given: 'Photo or description', not_duplicate: 'First claim from your household',
+  ai_review: 'Review by Claude', verified_by_office: 'Verified by the office'};
+
+boot();
+async function boot() {
+  try {
+    POT = await R.pot();
+    if (!POT) return R.empty($('main'), 'There is no relief appeal open yet.');
+    const [pub, opt] = await Promise.all([R.api('/api/relief/pots/' + POT.id), R.api('/api/relief/options')]);
+    PLACES = pub.places; OPT = opt;
+    render(pub);
+    const q = new URLSearchParams(location.search);
+    if (q.get('claim')) { $('lc-id').value = q.get('claim'); }
+  } catch (e) { $('main').innerHTML = `<section class="card"><div class="notice bad">${R.esc(e.message)}</div></section>`; }
+}
+
+function render(pub) {
+  $('main').innerHTML = `<div class="narrow" style="display:grid;gap:20px">
+  <div class="rhead"><div><div class="eyebrow">${R.esc(pub.pot.authority)}</div><h1>Ask for help</h1>
+    <p>Tell us what happened. If you qualify, you get a relief code straight away to spend on ${R.esc(Object.values(pub.pot.categories).join(', ').toLowerCase())} at local shops. Some claims are checked by a person first.</p></div></div>
+  <section class="card" id="form">
+    <div class="steps"><span><b>1</b> About you</span><span>·</span><span><b>2</b> What happened</span><span>·</span><span><b>3</b> Get your code</span></div>
+    <div class="row"><div><label for="name">Your full name</label><input id="name" autocomplete="name" maxlength="80"></div>
+      <div><label for="phone">Phone number</label><input id="phone" autocomplete="tel" placeholder="+212 6…" inputmode="tel"></div></div>
+    <div class="row"><div><label for="place">Your village</label><select id="place">${PLACES.map(p => `<option value="${p.id}">${R.esc(p.name)}</option>`).join('')}<option value="other">Somewhere else</option></select></div>
+      <div><label for="size">People in your household</label><input id="size" type="number" min="1" max="25" value="4"></div></div>
+    <label for="needs">What do you need most?</label>
+    <div class="chips" id="needchips">${Object.values(pub.pot.categories).map(c => `<button type="button" class="cat" onclick="toggleNeed(this)">${R.esc(c)}</button>`).join('')}</div>
+    <input id="needs" style="margin-top:8px" placeholder="or write it here" maxlength="400">
+    <label for="story">What happened to your home and family?</label>
+    <textarea id="story" maxlength="1500" placeholder="A few sentences is enough."></textarea>
+    <label>A photo of the damage (optional, it helps)</label>
+    <div class="drop" id="drop" onclick="$('file').click()">Tap to add a photo</div>
+    <input type="file" id="file" accept="image/*" capture="environment" style="display:none" onchange="readPhoto(this.files[0])">
+    <label class="check"><input type="checkbox" id="consent"> Donors may see my first name and what I wrote (never my phone number or photo)</label>
+    <button class="earth wide" id="send" onclick="send(this)">Send my claim</button>
+    <p class="privacy">Your photo and phone number stay with the relief office. ${pub.pot.mode === 'simulated' ? 'This is a demo: no real money is involved.' : ''}</p>
+  </section>
+  <section class="card" id="result" style="display:none"></section>
+  <section class="card"><h2>Check a claim</h2>
+    <div class="row"><div><label for="lc-id">Claim number</label><input id="lc-id" placeholder="CLM-…"></div><div><label for="lc-phone">Phone number</label><input id="lc-phone" inputmode="tel"></div></div>
+    <button class="wide" onclick="lookup(this)">Check</button><div id="lc-out"></div></section>
+  </div>`;
+}
+
+function toggleNeed(b) {
+  b.classList.toggle('on');
+  $('needs').value = [...document.querySelectorAll('#needchips .on')].map(x => x.textContent.toLowerCase()).join(', ');
+}
+
+function readPhoto(f) {
+  if (!f) return;
+  const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => {
+    const k = Math.min(1, 1024 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    photo = c.toDataURL('image/jpeg', .8);
+    $('drop').innerHTML = `<img src="${photo}" alt="Your photo"><small>Tap to change</small>`;
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => { $('drop').textContent = 'That file is not a photo we can read. Try another.'; };
+  img.src = url;
+}
+
+async function send(btn) {
+  btn.disabled = true; btn.textContent = 'Checking your claim…';
+  $('result').style.display = 'block';
+  $('result').innerHTML = `<h2>Checking your claim</h2><ul class="pipeline">${['Checking the rules', 'Claude is reading your claim', 'Deciding'].map(t => `<li><span class="ic wait">…</span><div>${t}</div></li>`).join('')}</ul>`;
+  try {
+    const r = await R.api(`/api/relief/pots/${POT.id}/claims`, {method: 'POST', body: {name: $('name').value, phone: $('phone').value,
+      place: $('place').value, household: +$('size').value, needs: $('needs').value, story: $('story').value, photo, consent_public: $('consent').checked}});
+    showResult(r, $('phone').value);
+    $('form').style.display = 'none';
+  } catch (e) {
+    $('result').innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Send my claim';
+  $('result').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function pipeline(checks) {
+  return `<ul class="pipeline">${checks.map(c => `<li><span class="ic ${c.passed ? '' : c.check === 'ai_review' ? 'wait' : 'no'}">${c.passed ? '✓' : c.check === 'ai_review' ? '?' : '✗'}</span>
+    <div>${R.esc(CHECK_NAMES[c.check] || c.check)}<small>${R.esc(c.check === 'ai_review' ? c.detail.replace(/^\w+ \(\w+\): /, '') : c.detail)}</small></div></li>`).join('')}</ul>`;
+}
+
+function showResult(r, phone) {
+  const shops = OPT.merchants.filter(m => (r.categories || []).some(c => m.categories.includes(c)));
+  let head;
+  if (r.status === 'issued') {
+    head = `<h2>You have a relief code</h2>
+      <div class="reliefcode">${R.esc(r.code)}<div class="terms">${R.gbp(r.amount)} for ${R.esc(r.category_names.join(', ').toLowerCase())}. Valid until ${new Date(r.expires * 1000).toLocaleDateString('en-GB', {day: 'numeric', month: 'long'})}. Keep it safe: anyone with this code can spend it.</div></div>
+      <p style="margin-top:18px"><b>Where to use it</b></p><div class="chips">${shops.map(s => `<span class="chip leaf">${R.esc(s.name)} · ${R.esc(s.kind)}</span>`).join('')}</div>`;
+  } else if (r.status === 'referred') {
+    head = `<h2>A person at the relief office will look at your claim</h2>
+      <p>Most claims are answered within a day. Keep your claim number: <b style="font-family:var(--mono)">${R.esc(r.claim_id)}</b>. Check below with your phone number.</p>`;
+  } else {
+    head = `<h2>We could not accept this claim</h2><div class="notice bad">${R.esc(friendly(r.reason))}</div>
+      <p class="muted">If you think this is wrong, the relief office can still look at it: give them your claim number <b style="font-family:var(--mono)">${R.esc(r.claim_id)}</b>.</p>`;
+  }
+  $('result').innerHTML = head + `<p style="margin:18px 0 0"><b>What we checked</b></p>` + pipeline(r.checks) +
+    `<button class="ghost wide" onclick="location.reload()">Done</button>`;
+  $('lc-id').value = r.claim_id; $('lc-phone').value = phone;
+}
+
+function friendly(reason) {
+  const [k, ...rest] = String(reason || '').split(': ');
+  return ({place_in_area: 'This appeal covers only the villages in the list.', not_duplicate: 'Your household has already made a claim.',
+           evidence_given: 'Please add a photo or describe what happened in a few sentences.', contact_given: 'We need a phone number to reach you.',
+           text_clean: 'Your message contains text we cannot accept. Please write it again in your own words.',
+           household_size: 'Please give the number of people in your household.',
+           goods_covered: 'Some items are not covered by relief codes.', within_balance: 'Not enough left on the code.'}[k]) || rest.join(': ') || reason;
+}
+
+async function lookup(btn) {
+  btn.disabled = true;
+  try {
+    const r = await R.api(`/api/relief/claims/${encodeURIComponent($('lc-id').value.trim())}/status`, {method: 'POST', body: {phone: $('lc-phone').value}});
+    $('lc-out').innerHTML = r.status === 'issued' ? `<div class="reliefcode" style="font-size:22px">${R.esc(r.code)}<div class="terms">${R.gbp(r.remaining)} left of ${R.gbp(r.amount)} · ${R.esc(r.status_code)} · ${R.esc(r.category_names.join(', ').toLowerCase())}</div></div>
+      ${r.purchases && r.purchases.length ? `<ul class="buys">${r.purchases.map(p => `<li><div class="top"><span>${R.esc(p.merchant)}</span><span>${p.result === 'APPROVED' ? R.gbp(p.amount) : 'refused'}</span></div><small>${R.esc(p.items.map(i => i.qty + ' × ' + i.name).join(', '))}${p.reason ? ' · ' + R.esc(friendly(p.reason)) : ''}</small></li>`).join('')}</ul>` : ''}`
+      : `<div class="notice ${r.status === 'rejected' || r.status === 'declined' ? 'bad' : 'ok'}">${r.status === 'referred' ? 'Still with the relief office.' : R.esc(friendly(r.reason))}</div>`;
+  } catch (e) { $('lc-out').innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+</script>
+</body></html>

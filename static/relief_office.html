@@ -1,0 +1,171 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relief office</title>
+<link rel="stylesheet" href="/static/style.css?v=5"><link rel="stylesheet" href="/static/relief.css?v=1">
+</head><body class="relief">
+<header></header>
+<main id="main"><section class="card muted">Loading…</section></main>
+<script src="/static/relief_common.js?v=1"></script>
+<script>
+R.nav('office');
+const $ = id => document.getElementById(id);
+let POT, O, filter = 'waiting', busy = false;
+const STATUS = {referred: 'Waiting for you', declined: 'Stopped by the rules', issued: 'Code issued', rejected: 'Rejected', reviewing: 'Being reviewed'};
+
+boot();
+async function boot() {
+  try { POT = await R.pot(); } catch (e) { return fail(e); }
+  if (!POT) return R.empty($('main'));
+  await load(true);
+  setInterval(() => { if (!busy && !document.activeElement.matches('input,textarea,select')) load(); }, 6000);
+}
+function fail(e) {
+  if (/office key/i.test(e.message)) {
+    $('main').innerHTML = `<section class="card narrow"><h2>Relief office sign-in</h2><p class="muted">This server asks for the office key (RELIEF_OFFICE_KEY).</p>
+      <label for="k">Office key</label><input id="k" type="password"><button class="earth wide" onclick="localStorageSet('reliefOfficeKey',$('k').value);location.reload()">Continue</button></section>`;
+    return;
+  }
+  $('main').innerHTML = `<section class="card"><div class="notice bad">${R.esc(e.message)}</div></section>`;
+}
+async function load(first) {
+  try { O = await R.api('/api/relief/office/' + POT.id); } catch (e) { return fail(e); }
+  if (first) layout();
+  drawBalance(); drawQueue(); drawHeld(); drawLog();
+  if (first) { drawPolicy(); drawRegister(); }
+}
+
+function layout() {
+  const ai = O.ai;
+  $('main').innerHTML = `
+  <div class="rhead"><div><div class="eyebrow">Relief office console</div><h1>${R.esc(O.pot.name)}</h1>
+    <p>Run by ${R.esc(O.pot.authority)}. Claims arrive here after the fixed rules and Claude have looked at them. You decide anything Claude passes to you.</p></div>
+    <span class="trail ${ai.enabled ? 'ok' : 'bad'}">${ai.enabled ? '● Claude reviewing claims · ' + R.esc(ai.model) : '○ No AI key: every claim comes to you'}</span></div>
+  <div class="cols">
+    <div>
+      <div id="held"></div>
+      <section>
+        <div class="sechead"><h2>Claims</h2><div class="filters" id="filters"></div></div>
+        <div class="queue" id="queue"></div>
+      </section>
+    </div>
+    <aside class="panel" style="position:static">
+      <div class="balance" id="balance"></div>
+      <section class="card"><h2>Live activity</h2><ul class="log" id="log"></ul></section>
+      <section class="card policy" id="policy"></section>
+      <section class="card" id="register"></section>
+    </aside>
+  </div>`;
+}
+
+function drawBalance() {
+  const b = O.balances;
+  $('balance').innerHTML = `<small>Unallocated in the pot</small><b>${R.gbp(b.available)}</b>
+    <div class="kv"><span>Given by ${b.donors} donors</span><b>${R.gbp(b.raised)}</b></div>
+    <div class="kv"><span>On live codes, not yet spent</span><b>${R.gbp(b.outstanding)}</b></div>
+    <div class="kv"><span>Spent at shops</span><b>${R.gbp(b.spent)}</b></div>
+    <div class="kv"><span>Returned from expired or revoked codes</span><b>${R.gbp(b.returned)}</b></div>
+    <div class="kv"><span>Households with a code</span><b>${b.households}</b></div>`;
+}
+
+function drawQueue() {
+  const groups = {waiting: c => c.status === 'referred', stopped: c => c.status === 'declined', issued: c => c.status === 'issued', all: () => true};
+  const names = {waiting: 'Waiting for you', stopped: 'Stopped by rules', issued: 'Issued', all: 'All'};
+  $('filters').innerHTML = Object.keys(groups).map(k => `<button class="cat ${k === filter ? 'on' : ''}" onclick="filter='${k}';drawQueue()">${names[k]} · ${O.claims.filter(groups[k]).length}</button>`).join('');
+  const list = O.claims.filter(groups[filter]);
+  $('queue').innerHTML = list.length ? list.map(claimCard).join('') : `<div class="empty-state">${filter === 'waiting' ? 'Nothing waiting. Claude issues codes within your policy; anything else lands here.' : 'No claims here.'}</div>`;
+}
+
+function claimCard(c) {
+  const rv = c.review, open = c.status === 'referred' || c.status === 'declined';
+  return `<article class="claim ${c.status}" id="c-${c.id}">
+    <div class="chead"><div><b>${R.esc(c.name)}</b> <span class="pill ${c.status === 'issued' ? 'active' : c.status === 'referred' ? 'used' : c.status === 'declined' ? 'DECLINED' : ''}">${STATUS[c.status] || c.status}</span>
+      <div class="meta">${R.esc(c.place_name)} · ${c.household} ${c.household === 1 ? 'person' : 'people'} · ${R.esc(c.phone)} · ${R.ago(c.created)} · ${c.id}${c.registered_by ? ' · registered by ' + R.esc(c.registered_by) : ''}${c.consent_public ? ' · <span title="Agreed to show first name and story to donors">shares story</span>' : ''}</div></div>
+      <div style="text-align:right"><b>${R.gbp(c.code ? c.code.cap : (c.recommended_amount ?? c.entitlement ?? 0))}</b><div class="meta">${c.code ? 'code …' + c.code.hint : 'entitlement ' + R.gbp(c.entitlement || 0)}</div></div></div>
+    ${c.story || c.needs || c.photo ? `<div class="body ${c.photo ? '' : 'nophoto'}"><div>
+      ${c.needs ? `<div class="meta"><b>Needs:</b> ${R.esc(c.needs)}</div>` : ''}
+      ${c.story ? `<p class="story">${R.esc(c.story)}</p>` : ''}</div>
+      ${c.photo ? `<a href="${c.photo}" target="_blank"><img src="${c.photo}" alt="Photo sent with the claim"></a>` : ''}</div>` : ''}
+    <div class="checks">${(c.checks || []).filter(x => x.check !== 'ai_review').map(x => `<span class="${x.passed ? '' : 'no'}" title="${R.esc(x.detail)}">${x.passed ? '✓' : '✗'} ${x.check.replace(/_/g, ' ')}${x.passed ? '' : ': ' + R.esc(x.detail)}</span>`).join('')}</div>
+    ${rv ? `<div class="aibox ${rv.verdict}"><span class="verdict">Claude: ${rv.verdict === 'approve' ? 'approve' : 'refer to you'}</span> <small>(${R.esc(rv.confidence)} confidence${rv.model ? ' · ' + R.esc(rv.model) : ''})</small>
+      <div>${R.esc(rv.summary)}</div>
+      ${rv.photo_finding && rv.photo_finding !== 'no photo' ? `<div class="meta">Photo: ${R.esc(rv.photo_finding)}</div>` : ''}
+      ${rv.urgent ? `<div class="notice bad" style="margin-top:8px">Urgent: ${R.esc(rv.urgent)}</div>` : ''}
+      ${rv.red_flags && rv.red_flags.length ? `<ul class="flags">${rv.red_flags.map(f => `<li>${R.esc(f)}</li>`).join('')}</ul>` : ''}</div>` : ''}
+    ${c.reason && c.status !== 'issued' ? `<div class="meta" style="margin-top:8px">${R.esc(c.reason)}</div>` : ''}
+    ${open ? `<div class="decide">
+      <div><label>Amount (£)</label><input type="number" id="amt-${c.id}" min="1" step="1" max="${c.entitlement || ''}" value="${c.recommended_amount || c.entitlement || ''}"></div>
+      <div><label>Note for the record</label><input class="noteinput" id="note-${c.id}" placeholder="e.g. checked with the village committee"></div>
+      <button class="earth" onclick="decide('${c.id}','approve',this)">Approve and issue code</button>
+      <button class="ghost" onclick="decide('${c.id}','reject',this)">Reject</button></div>
+      <div id="msg-${c.id}"></div>` : ''}
+    ${c.code ? `<div class="kv" style="margin-top:10px"><span>Code …${c.code.hint} · ${c.code.status}</span><b>${R.gbp(c.code.spent)} spent · ${R.gbp(c.code.remaining)} left${c.code.returned ? ' · ' + R.gbp(c.code.returned) + ' returned' : ''}</b></div>
+      ${c.code.status === 'active' ? `<div class="actions"><button class="ghost small" onclick="revoke('${c.code.hint}',this)">Revoke and return the rest to the pot</button></div>` : ''}` : ''}
+  </article>`;
+}
+
+async function decide(id, action, btn) {
+  busy = true; btn.disabled = true;
+  try {
+    const r = await R.api(`/api/relief/claims/${id}/decide`, {method: 'POST', body: {action, amount: +$('amt-' + id).value || null, note: $('note-' + id).value, officer: 'Relief officer'}});
+    await load();
+    if (r.status === 'issued') { filter = 'issued'; drawQueue(); document.getElementById('c-' + id)?.scrollIntoView({block: 'center'}); }
+  } catch (e) { $('msg-' + id).innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`; btn.disabled = false; }
+  busy = false;
+}
+async function revoke(hint, btn) {
+  if (!confirm('Revoke this code? The unspent amount goes back to the pot.')) return;
+  btn.disabled = true; await R.api(`/api/relief/pots/${POT.id}/codes/${hint}/revoke`, {method: 'POST'}); load();
+}
+
+function drawHeld() {
+  $('held').innerHTML = O.held.length ? `<section class="card" style="border-color:var(--warn);margin-bottom:20px"><h2>Baskets waiting at a shop</h2>
+    ${O.held.map(h => `<div class="claim referred"><div class="chead"><div><b>${R.esc(h.merchant)}</b><div class="meta">${R.esc(h.items.join(', '))} · ${R.ago(h.created)}</div></div><b>${R.gbp(h.amount)}</b></div>
+      <div class="aibox refer"><span class="verdict">Claude: ${R.esc(h.audit.verdict)}</span><div>${R.esc(h.audit.summary)}</div></div>
+      <div class="actions"><button class="earth" onclick="held('${h.id}','approve',this)">Allow the purchase</button><button class="ghost" onclick="held('${h.id}','reject',this)">Refuse</button></div></div>`).join('')}</section>` : '';
+}
+async function held(id, a, btn) { btn.disabled = true; await R.api(`/api/relief/held/${id}/${a}`, {method: 'POST'}); load(); }
+
+function drawLog() {
+  $('log').innerHTML = O.log.map(e => `<li><span class="dot ${e.type}"></span><div>${R.esc(e.summary)}<br><small>${new Date(e.at).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})} · <a href="/evidence/${e.id}" target="_blank">${e.id}</a></small></div></li>`).join('') || '<li class="muted">Nothing yet.</li>';
+}
+
+function drawPolicy() {
+  const p = O.pot.policy;
+  $('policy').innerHTML = `<h2>Policy</h2><p class="muted" style="font-size:13.5px;margin:-6px 0 0">Claude works inside these limits. It can lower an amount, never raise it.</p>
+    <div class="row"><div><label>Per household (£)</label><input id="p-base" type="number" value="${p.base}"></div><div><label>Per person (£)</label><input id="p-per" type="number" value="${p.per_person}"></div></div>
+    <div class="row"><div><label>Most per household (£)</label><input id="p-max" type="number" value="${p.max_per_household}"></div><div><label>Claude may issue up to (£)</label><input id="p-auto" type="number" value="${p.auto_issue_max}"></div></div>
+    <label>Codes last (days)</label><input id="p-exp" type="number" value="${p.expiry_days}">
+    <label>Goods a code covers</label><div class="catpick">${Object.entries(O.categories).map(([k, v]) => `<label><input type="checkbox" value="${k}" ${p.categories.includes(k) ? 'checked' : ''}>${R.esc(v)}</label>`).join('')}</div>
+    <label>What the money is for (Claude checks baskets against this)</label><textarea id="p-intent">${R.esc(p.intent)}</textarea>
+    <button class="wide" onclick="savePolicy(this)">Save policy</button><div id="p-msg"></div>`;
+}
+async function savePolicy(btn) {
+  btn.disabled = true;
+  try {
+    await R.api(`/api/relief/pots/${POT.id}/policy`, {method: 'POST', body: {base: +$('p-base').value, per_person: +$('p-per').value,
+      max_per_household: +$('p-max').value, auto_issue_max: +$('p-auto').value, expiry_days: +$('p-exp').value, intent: $('p-intent').value,
+      categories: [...document.querySelectorAll('.catpick input:checked')].map(i => i.value)}});
+    $('p-msg').innerHTML = '<div class="notice ok">Saved. New claims use this policy.</div>'; load();
+  } catch (e) { $('p-msg').innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+
+function drawRegister() {
+  $('register').innerHTML = `<h2>Register a household</h2><p class="muted" style="font-size:13.5px;margin:-6px 0 0">For households your team or a village committee has already verified. The code is issued straight away.</p>
+    <label>Name</label><input id="r-name"><label>Phone</label><input id="r-phone" placeholder="+212 6…">
+    <div class="row"><div><label>Village</label><select id="r-place">${O.places.map(p => `<option value="${p.id}">${R.esc(p.name)}</option>`).join('')}</select></div>
+      <div><label>People</label><input id="r-size" type="number" min="1" max="25" value="4"></div></div>
+    <label class="check"><input type="checkbox" id="r-consent"> They agree to show their first name to donors</label>
+    <button class="earth wide" onclick="register(this)">Issue a relief code</button><div id="r-msg"></div>`;
+}
+async function register(btn) {
+  btn.disabled = true;
+  try {
+    const r = await R.api(`/api/relief/pots/${POT.id}/codes`, {method: 'POST', body: {name: $('r-name').value, phone: $('r-phone').value,
+      place: $('r-place').value, household: +$('r-size').value, consent_public: $('r-consent').checked}});
+    $('r-msg').innerHTML = `<div class="reliefcode" style="font-size:20px">${R.esc(r.code)}<div class="terms">${R.gbp(r.amount)} for ${R.esc(r.category_names.join(', ').toLowerCase())}. Give this code to the household.</div></div>`;
+    ['r-name', 'r-phone'].forEach(i => $(i).value = ''); load();
+  } catch (e) { $('r-msg').innerHTML = `<div class="notice bad">${R.esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+</script>
+</body></html>

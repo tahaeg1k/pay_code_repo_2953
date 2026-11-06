@@ -14,6 +14,8 @@ import ai
 import catalog
 import escrow
 import paycodes as pc
+import relief
+import relief_demo
 
 app = FastAPI(title="ScopePay")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -269,3 +271,192 @@ async def paypal_webhook(request: Request):
     if not await run_in_threadpool(pc.verify_webhook, dict(request.headers), event):
         return JSONResponse({"error": "webhook signature not verified"}, status_code=401)
     return await run_in_threadpool(pc.handle_paypal_event, event)
+
+
+# ---------- ScopePay Relief: donor pots, relief codes, AI-reviewed claims, money map ----------
+import os  # noqa: E402
+
+
+def _office(key):
+    """Office endpoints need X-Office-Key when RELIEF_OFFICE_KEY is set (unset = open, for the local demo)."""
+    want = os.getenv("RELIEF_OFFICE_KEY")
+    if want and key != want:
+        raise PermissionError("This needs the relief office key (X-Office-Key).")
+
+
+@app.exception_handler(PermissionError)
+async def forbidden(_, e):
+    return JSONResponse({"error": str(e)}, status_code=403)
+
+
+@app.get("/relief")
+def relief_page():
+    return FileResponse("static/relief.html")
+
+
+@app.get("/relief/office")
+def relief_office_page():
+    return FileResponse("static/relief_office.html")
+
+
+@app.get("/relief/claim")
+def relief_claim_page():
+    return FileResponse("static/relief_claim.html")
+
+
+@app.get("/relief/shop")
+def relief_shop_page():
+    return FileResponse("static/relief_shop.html")
+
+
+@app.get("/api/relief/pots")
+def relief_pots():
+    return relief.list_pots()
+
+
+@app.get("/api/relief/options")
+def relief_options():
+    return {"cities": relief_demo.CITIES, "categories": relief.CATEGORIES, "merchants": relief.merchants(),
+            "mode": relief.MODE}
+
+
+@app.get("/api/relief/pots/{pot_id}")
+def relief_public(pot_id: str):
+    return relief.public_view(pot_id)
+
+
+class Donation(BaseModel):
+    amount: float
+    donor_name: str = ""
+    show_name: bool = False
+    city: str = ""
+    message: str = ""
+
+
+@app.post("/api/relief/pots/{pot_id}/donate")
+def relief_donate(pot_id: str, b: Donation, request: Request):
+    base = str(request.base_url).rstrip("/")
+    return relief.donate(pot_id, b.amount, b.donor_name, b.show_name, relief_demo.CITIES.get(b.city), b.message,
+                         return_url=f"{base}/relief/donate/return", cancel_url=f"{base}/relief?donation=cancelled")
+
+
+@app.get("/relief/donate/return")
+def relief_donate_return(token: Optional[str] = None):
+    out = relief.finish_donation(token)
+    return RedirectResponse(f"/relief?donation={out['donation_id']}")
+
+
+@app.get("/api/relief/donations/{did}")
+def relief_receipt(did: str):
+    return relief.donation_receipt(did)
+
+
+class Claim(BaseModel):
+    name: str
+    phone: str
+    place: str
+    household: int
+    needs: str = ""
+    story: str = ""
+    photo: Optional[str] = None       # data: URL, resized in the browser
+    consent_public: bool = False
+
+
+@app.post("/api/relief/pots/{pot_id}/claims")
+def relief_claim(pot_id: str, b: Claim):
+    return relief.submit_claim(pot_id, b.name, b.phone, b.place, b.household, b.needs, b.story, b.photo, b.consent_public)
+
+
+class ClaimLookup(BaseModel):
+    phone: str
+
+
+@app.post("/api/relief/claims/{claim_id}/status")
+def relief_claim_status(claim_id: str, b: ClaimLookup):
+    return relief.claim_status(claim_id, b.phone)
+
+
+@app.get("/api/relief/office/{pot_id}")
+def relief_office(pot_id: str, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.office_view(pot_id)
+
+
+class Decision(BaseModel):
+    action: str                       # approve | reject
+    amount: Optional[float] = None
+    categories: Optional[List[str]] = None
+    note: str = ""
+    officer: str = "Relief officer"
+
+
+@app.post("/api/relief/claims/{claim_id}/decide")
+def relief_decide(claim_id: str, b: Decision, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.decide_claim(claim_id, b.action, b.amount, b.categories, b.note, b.officer)
+
+
+class DirectCode(BaseModel):
+    name: str
+    phone: str
+    place: str
+    household: int
+    amount: Optional[float] = None
+    categories: Optional[List[str]] = None
+    consent_public: bool = False
+    officer: str = "Relief officer"
+
+
+@app.post("/api/relief/pots/{pot_id}/codes")
+def relief_direct(pot_id: str, b: DirectCode, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.issue_direct(pot_id, b.name, b.phone, b.place, b.household, b.amount, b.categories, b.officer, b.consent_public)
+
+
+@app.post("/api/relief/pots/{pot_id}/codes/{hint}/revoke")
+def relief_revoke(pot_id: str, hint: str, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.revoke_code(pot_id, hint)
+
+
+@app.post("/api/relief/pots/{pot_id}/policy")
+def relief_policy(pot_id: str, changes: dict, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.set_policy(pot_id, changes)
+
+
+@app.post("/api/relief/held/{eid}/{action}")
+def relief_held(eid: str, action: str, x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return relief.decide_held(eid, "approve" if action == "approve" else "reject")
+
+
+@app.get("/api/relief/catalog/{merchant_id}")
+def relief_catalog(merchant_id: str):
+    return {"merchant": next(m for m in relief.merchants() if m["id"] == merchant_id), "products": relief.catalog(merchant_id)}
+
+
+class ReliefCode(BaseModel):
+    code: str
+
+
+@app.post("/api/relief/codes/check")
+def relief_code_check(b: ReliefCode):
+    return relief.code_info(b.code)
+
+
+class ReliefRedeem(BaseModel):
+    code: str
+    merchant_id: str
+    items: List[AgentItem]
+
+
+@app.post("/api/relief/redeem")
+def relief_redeem(b: ReliefRedeem):
+    return relief.redeem(b.code, b.merchant_id, [i.model_dump() if hasattr(i, "model_dump") else i.dict() for i in b.items])
+
+
+@app.post("/api/relief/demo/seed")
+def relief_seed(x_office_key: Optional[str] = Header(None)):
+    _office(x_office_key)
+    return {"pot_id": relief_demo.seed()}
