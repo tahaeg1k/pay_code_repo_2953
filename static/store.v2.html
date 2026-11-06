@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demo shop</title><link rel="stylesheet" href="/static/style.css?v=5"></head><body class="store">
+<div class="storehero" id="hero"><div class="in">
+  <div><h1 id="brand">Shop</h1><p id="tagline"></p></div>
+  <div class="accept"><span class="spmark">SP</span> Accepts ScopePay codes</div>
+</div></div>
+<div class="perks" id="perks"></div>
+<main class="shopgrid">
+  <section>
+    <div class="sechead"><h2 id="shoptitle">Shop</h2><div class="cats" id="cats"></div></div>
+    <div class="items" id="items"></div>
+  </section>
+  <aside class="receipt" id="receipt">
+    <div id="checkout">
+      <h2>Your order</h2>
+      <div id="basket"></div>
+      <hr>
+      <div class="line sub"><span>Subtotal</span><span id="sub">£0.00</span></div>
+      <div class="line sub"><span>Delivery</span><span id="deliv">Free</span></div>
+      <div class="total"><span>Total</span><span id="total">£0.00</span></div>
+      <hr>
+      <label for="code">Pay with a ScopePay code</label>
+      <input id="code" placeholder="SP-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+      <div class="rails" role="radiogroup" aria-label="Settle with">
+        <label><input type="radio" name="rail" value="paypal" checked><span><b>PayPal</b><small>Instant</small></span></label>
+        <label><input type="radio" name="rail" value="pyusd"><span><b>PYUSD escrow</b><small>Refundable window</small></span></label>
+      </div>
+      <button id="pay"><span class="spmark">SP</span> Pay with ScopePay</button>
+      <div class="paywith">Settled through PayPal. The shop never sees your PayPal login.</div>
+      <div id="result"></div>
+    </div>
+  </aside>
+</main>
+<script>
+const CATALOG={
+ greenleaf:{color:"#1F7A4D",pattern:"leaf",tagline:"Fresh groceries from local growers, delivered today.",title:"Fresh this week",
+  perks:["🚚 Free delivery over £20","🌱 Grown within 50 miles","⏱ Same-day before 4pm"],
+  items:[["🍎","Apples (6)",2.4,"Fruit & veg"],["🥑","Avocados (2)",2.0,"Fruit & veg"],["🥦","Broccoli",0.9,"Fruit & veg"],["🍞","Sourdough loaf",3.2,"Bakery"],["🧀","Cheddar 400g",4.5,"Dairy"],["🥛","Oat milk 1L",1.8,"Dairy"],["🍝","Pasta 500g",1.1,"Pantry"],["☕","Coffee beans",6.5,"Pantry"],["🍫","Dark chocolate",2.2,"Pantry"]]},
+ northside:{color:"#4B3BC8",pattern:"circuit",tagline:"Cables, chargers and small gadgets, next-day.",title:"Bestsellers",
+  perks:["📦 Next-day delivery","🔁 30-day returns","🛡 1-year warranty"],
+  items:[["🔌","USB-C cable",8.99,"Cables"],["🔋","Power bank",19.5,"Power"],["🎧","Earbuds",24.99,"Audio"],["🖱️","Wireless mouse",14.0,"Desk"],["⌨️","Keyboard",34.0,"Desk"],["💡","Smart bulb",9.5,"Home"]]}};
+const MID=new URLSearchParams(location.search).get('m')||'greenleaf', cat=CATALOG[MID]||CATALOG.greenleaf, items=cat.items;
+const $=id=>document.getElementById(id), gbp=n=>'£'+n.toFixed(2), basket={};
+document.documentElement.style.setProperty('--brand',cat.color);
+$('hero').classList.add(cat.pattern);$('tagline').textContent=cat.tagline;$('shoptitle').textContent=cat.title;
+$('perks').innerHTML='<div class="in">'+cat.perks.map(p=>`<span>${p}</span>`).join('')+'</div>';
+fetch('/api/merchants').then(r=>r.json()).then(ms=>{const m=ms[MID];document.title=m.name;$('brand').textContent=`${m.emoji} ${m.name}`});
+const cats=['All',...new Set(items.map(i=>i[3]))];let curCat='All';
+$('cats').innerHTML=cats.map(c=>`<button class="cat${c=='All'?' on':''}" data-c="${c}">${c}</button>`).join('');
+document.querySelectorAll('.cat').forEach(b=>b.onclick=()=>{curCat=b.dataset.c;document.querySelectorAll('.cat').forEach(x=>x.classList.toggle('on',x===b));drawItems()});
+function drawItems(){$('items').innerHTML=items.map((it,i)=>[it,i]).filter(([it])=>curCat=='All'||it[3]==curCat).map(([it,i])=>{const q=basket[i]||0;return `<div class="item${q?' added':''}"><div class="emoji">${it[0]}</div><div class="name">${it[1]}</div><div class="price">${gbp(it[2])}</div>${q?`<div class="stepper"><button aria-label="Remove one ${it[1]}" onclick="chg(${i},-1)">−</button><span>${q}</span><button aria-label="Add one ${it[1]}" onclick="chg(${i},1)">+</button></div>`:`<button onclick="chg(${i},1)">Add to basket</button>`}</div>`}).join('')}
+function total(){return Object.entries(basket).reduce((s,[i,q])=>s+items[i][2]*q,0)}
+function render(){const e=Object.entries(basket).filter(([,q])=>q>0);
+ $('basket').innerHTML=e.length?e.map(([i,q])=>`<div class="line"><span><span class="qty">${q}×</span> ${items[i][1]}</span><span>${gbp(items[i][2]*q)}</span></div>`).join(''):'<p class="muted" style="margin:0">Your basket is empty. Add something from the shop.</p>';
+ $('sub').textContent=gbp(total());$('total').textContent=gbp(total());drawItems()}
+function chg(i,d){basket[i]=Math.max(0,(basket[i]||0)+d);render()}
+function rail(){return document.querySelector('input[name=rail]:checked').value}
+function reset(){$('checkout').classList.remove('done');$('result').innerHTML='';$('code').value='';render()}
+$('pay').onclick=async()=>{const amt=+total().toFixed(2);
+  if(!amt){$('result').innerHTML='<div class="notice bad">Add at least one item before paying.</div>';return}
+  if(!$('code').value.trim()){$('result').innerHTML='<div class="notice bad">Paste a ScopePay code from your wallet.</div>';$('code').focus();return}
+  const lines=Object.entries(basket).filter(([,q])=>q>0).map(([i,q])=>({name:items[i][1],qty:q,price:items[i][2]}));
+  $('pay').disabled=true;$('pay').innerHTML='Checking your code…';
+  try{const r=await fetch('/api/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('code').value,amount:amt,merchant_id:MID,basket:lines,channel:'human',rail:rail()})});const j=await r.json();
+    const ev=j.evidence_id?`<a class="btnlink" href="/evidence/${j.evidence_id}" target="_blank">View evidence ${j.evidence_id}</a>`:'';
+    if(j.approved){const esc=j.rail=='pyusd_escrow';
+      $('result').innerHTML=`<div class="outcome ok"><div class="big">✓</div><h3>${esc?'Payment held in escrow':'Order placed'}</h3><p>${esc?`${amt.toFixed(2)} PYUSD is held for ${j.paid_to} until the refund window ends.`:`${gbp(amt)} paid to ${j.paid_to}.`}</p><small>${esc?`Escrow #${j.escrow_payment_id}, ${j.mode}`:`PayPal order ${j.paypal_order_id}, ${j.capture_status.toLowerCase()}`}</small><div class="outactions">${ev}<button class="ghost small" onclick="for(const k in basket)delete basket[k];reset()">Start a new order</button></div></div>`;
+      $('checkout').classList.add('done')}
+    else{$('result').innerHTML=`<div class="outcome bad"><div class="stampbox">Declined</div><p>${(r=>r.charAt(0).toUpperCase()+r.slice(1))((j.reason||j.error||'').replace(/^[a-z_]+: /,'').replace(/^locked to/,'this code only works at'))}</p><small>No money moved. Your basket is still here.</small><div class="outactions">${ev}</div></div>`}}
+  catch(e){$('result').innerHTML=`<div class="notice bad">${e.message}</div>`}
+  $('pay').disabled=false;$('pay').innerHTML='<span class="spmark">SP</span> Pay with ScopePay'};
+render();
+</script></body></html>

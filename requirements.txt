@@ -1,0 +1,8 @@
+requests
+python-dotenv
+fastapi
+uvicorn
+cryptography   # Ed25519 signatures on the evidence trail (records are written unsigned without it)
+# optional, only for the on-chain (Sepolia) escrow rail:
+# web3
+# tests:  pip install pytest httpx   then   python -m pytest -q

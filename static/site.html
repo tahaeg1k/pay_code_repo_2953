@@ -1,0 +1,227 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay · A PayPal wallet with rules, for your AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#002a6b;--blue:#0070e0;--sky:#e8f2ff;--ink:#0e1726;--muted:#5b6678;--line:#e5e9f0;--bg:#fff;--soft:#f6f8fb;--ok:#0f8a4b;--bad:#c62828;--gold:#ffc439}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:16px/1.6 Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:var(--ink);background:var(--bg)}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+nav.top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav.top .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{font-weight:800;font-size:20px;color:var(--navy);display:flex;align-items:center;gap:8px}.logo i{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;font-style:normal;font-size:15px}
+.tabs a{margin-left:22px;color:var(--muted);font-weight:500}.tabs a.on{color:var(--ink);font-weight:700}.tabs a:hover{text-decoration:none;color:var(--ink)}
+.btn{display:inline-block;background:var(--navy);color:#fff;border-radius:999px;padding:12px 22px;font-weight:600;border:0;cursor:pointer;font:600 15px Inter,sans-serif}.btn:hover{text-decoration:none;background:var(--blue)}
+.btn.gold{background:var(--gold);color:var(--navy)}.btn.ghost{background:transparent;color:var(--navy);border:1.5px solid var(--line)}
+.serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400}
+h1{font-size:clamp(40px,6vw,68px);line-height:1.02;letter-spacing:-.02em;margin:0 0 18px}h2{font-size:clamp(30px,4vw,44px);line-height:1.1;letter-spacing:-.01em;margin:0 0 14px}h3{margin:0 0 6px;font-size:18px}
+.lead{font-size:19px;color:var(--muted);max-width:560px}
+section{padding:88px 0}section.soft{background:var(--soft)}section.navy{background:var(--navy);color:#fff}section.navy .muted{color:#b9c6e0}
+.muted{color:var(--muted)}.eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue)}
+.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding-top:72px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:center}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px}
+.card .ic{width:40px;height:40px;border-radius:10px;background:var(--sky);display:grid;place-items:center;font-size:20px;margin-bottom:12px}
+/* chat mock */
+.phone{background:#fff;border:1px solid var(--line);border-radius:28px;box-shadow:0 30px 60px -30px rgba(0,42,107,.35);padding:18px;max-width:420px;margin-left:auto;min-height:470px}
+.msg{max-width:84%;padding:10px 14px;border-radius:18px;margin:8px 0;font-size:15px;opacity:0;transform:translateY(6px);animation:in .4s forwards}
+.me{background:var(--blue);color:#fff;margin-left:auto;border-bottom-right-radius:6px}.ai{background:#f1f4f8;border-bottom-left-radius:6px}
+.sheet{border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0;background:#fff;opacity:0;animation:in .4s forwards}
+.sheet .row{display:flex;justify-content:space-between;font-size:14px;padding:4px 0}.pp{font-weight:800;color:var(--navy)}.pp b{color:#009cde}
+.chip{display:inline-block;font-size:12px;padding:3px 9px;border-radius:99px;background:var(--sky);color:var(--navy);margin:2px 4px 2px 0;font-weight:600}
+.chip.bad{background:#fde8e8;color:var(--bad)}.chip.ok{background:#e3f5ea;color:var(--ok)}
+@keyframes in{to{opacity:1;transform:none}}
+.strip{display:flex;flex-wrap:wrap;gap:10px 26px;align-items:center;justify-content:center;color:var(--muted);font-weight:600;font-size:15px;padding:26px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.strip span b{color:var(--navy)}
+.code{font:600 15px ui-monospace,Menlo,monospace;background:#0b1c3d;color:#cfe3ff;border-radius:14px;padding:18px;overflow:auto;line-height:1.7}
+.code .k{color:#ffc439}.code .s{color:#8fd19e}.code .c{color:#7a8db3}
+.ledger div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.mafia{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center}
+.year{font-size:84px;line-height:1;color:var(--gold)}
+.tl div{padding:12px 0 12px 22px;border-left:2px solid rgba(255,255,255,.25);position:relative}.tl div:before{content:"";position:absolute;left:-6px;top:18px;width:10px;height:10px;border-radius:50%;background:var(--gold)}
+footer{padding:40px 0;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+/* demo + blog */
+.page{display:none}.page.on{display:block}
+.step{display:grid;grid-template-columns:52px 1fr auto;gap:16px;align-items:center;border-bottom:1px solid var(--line);padding:20px 0}.step .n{width:44px;height:44px;border-radius:50%;background:var(--sky);color:var(--navy);display:grid;place-items:center;font-weight:800}
+.status td,.status th{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:15px}.status{width:100%;border-collapse:collapse}
+.video{aspect-ratio:16/9;border-radius:18px;background:linear-gradient(135deg,var(--navy),#0b4fb3);display:grid;place-items:center;color:#fff;font-size:18px}
+.post{border:1px solid var(--line);border-radius:18px;padding:26px;margin:16px 0;cursor:pointer}.post:hover{border-color:var(--blue)}.post .meta{font-size:13px;color:var(--muted)}
+article{max-width:720px}article p,article li{font-size:17px}article h2{font-size:34px}article blockquote{border-left:3px solid var(--blue);margin:20px 0;padding:4px 18px;color:var(--muted)}
+@media(max-width:860px){.hero,.grid2,.mafia{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}.phone{margin:0 auto}.tabs a{margin-left:12px;font-size:14px}.step{grid-template-columns:44px 1fr}.step .btn{grid-column:2}}
+</style></head><body>
+<nav class="top"><div class="wrap"><a class="logo" href="/" onclick="go('home');return false"><i>S</i>ScopePay</a>
+<div class="tabs"><a href="/" data-t="home" onclick="go('home');return false">Home</a><a href="/demo" data-t="demo" onclick="go('demo');return false">Demo</a><a href="/blog" data-t="blog" onclick="go('blog');return false">Blog</a><a href="/wallet" style="margin-left:22px" class="btn" target="_blank">Open wallet</a></div></div></nav>
+
+<!-- ============ HOME ============ -->
+<div class="page" id="home">
+<div class="wrap hero">
+  <div>
+    <div class="eyebrow">Built on PayPal · for AI agents</div>
+    <h1>Give your AI a <span class="serif" style="color:var(--blue)">PayPal wallet</span> with rules.</h1>
+    <p class="lead">Your agent never sees your PayPal login. It gets a scoped code: a spending cap, one merchant, an expiry. Every payment leaves a receipt you can prove.</p>
+    <p style="margin-top:28px"><a class="btn" href="/demo" onclick="go('demo');return false">See the demo</a> &nbsp; <a class="btn ghost" href="#rules">How it works</a></p>
+  </div>
+  <div class="phone" id="chat"></div>
+</div>
+
+<div class="wrap"><div class="strip">
+  <span>Powered by <b>PayPal Vault</b></span><span><b>Orders v2</b></span><span><b>Payouts</b></span><span><b>PYUSD</b></span><span>PayPal <b>Agent Toolkit</b> (next)</span>
+</div></div>
+
+<section id="rules"><div class="wrap">
+  <div class="eyebrow">Your rules, enforced</div>
+  <h2>All the control. <span class="serif">None of the anxiety.</span></h2>
+  <p class="lead">Set the rules once. ScopePay checks every one of them before PayPal moves a penny.</p>
+  <div class="grid3" style="margin-top:34px">
+    <div class="card"><div class="ic">💷</div><h3>Spending cap</h3><p class="muted">£60 means £60, across one payment or ten.</p></div>
+    <div class="card"><div class="ic">🏪</div><h3>Merchant lock</h3><p class="muted">Only usable at the shop you chose. Anywhere else, declined.</p></div>
+    <div class="card"><div class="ic">⏱️</div><h3>Auto-expiry</h3><p class="muted">15 minutes to 7 days, then the code is dead.</p></div>
+    <div class="card"><div class="ic">1️⃣</div><h3>Single or multi-use</h3><p class="muted">One purchase, or many until the cap is spent.</p></div>
+    <div class="card"><div class="ic">🛑</div><h3>Revoke anytime</h3><p class="muted">One tap and the agent's spending power is gone.</p></div>
+    <div class="card"><div class="ic">🔒</div><h3>No credential sharing</h3><p class="muted">Your PayPal stays in PayPal's vault. Agents only hold a code.</p></div>
+  </div>
+</div></section>
+
+<section class="soft"><div class="wrap grid2">
+  <div>
+    <div class="eyebrow">Evidence trail</div>
+    <h2>A payment can clear and <span class="serif">still be wrong.</span></h2>
+    <p class="lead">So every decision is written down: the rules you set, the basket, each check that passed or failed, and PayPal's order and capture IDs. Records are hash-chained, so history can't be quietly edited.</p>
+    <p class="muted">When something goes wrong, the merchant, PayPal and you are looking at the same facts.</p>
+  </div>
+  <div class="card ledger">
+    <div><b>EV-82504E3D · payment</b><span class="chip ok">APPROVED</span></div>
+    <div><span>Merchant</span><span>Greenleaf Grocer</span></div>
+    <div><span>Issued to</span><span>🤖 AI agent</span></div>
+    <div><span>merchant_lock</span><span>✅ Greenleaf only</span></div>
+    <div><span>within_cap</span><span>✅ £9.30 of £20.00</span></div>
+    <div><span>PayPal capture</span><span>COMPLETED</span></div>
+    <div><span>Record hash</span><span style="font-family:ui-monospace,monospace">82fd…dc44</span></div>
+  </div>
+</div></section>
+
+<section><div class="wrap grid2">
+  <div class="code"><span class="c"># the agent never touches PayPal credentials</span>
+<span class="k">POST</span> /api/redeem
+{ <span class="s">"code"</span>: <span class="s">"PC-8D8F-6B37-DA55"</span>,
+  <span class="s">"merchant_id"</span>: <span class="s">"greenleaf"</span>,
+  <span class="s">"amount"</span>: 25.00 }
+
+<span class="c"># → declined before PayPal is called</span>
+{ <span class="s">"approved"</span>: <span class="k">false</span>,
+  <span class="s">"reason"</span>: <span class="s">"within_cap: £25.00 vs £20.00"</span> }</div>
+  <div>
+    <div class="eyebrow">Two rails, one set of rules</div>
+    <h2>PayPal for everyday. <span class="serif">PYUSD when it must be reversible.</span></h2>
+    <p class="lead">Pay instantly from your linked PayPal, or settle in PYUSD through an escrow contract with a refund window, payer disputes and an arbiter who reads the evidence.</p>
+  </div>
+</div></section>
+
+<section class="navy"><div class="wrap mafia">
+  <div>
+    <div class="eyebrow" style="color:var(--gold)">The next PayPal mafia won't be people</div>
+    <h2>PayPal taught the internet to <span class="serif" style="color:var(--gold)">trust a payment.</span></h2>
+    <p class="muted" style="font-size:18px">The early PayPal team went on to shape a generation of the web. Their lesson: payments scale when strangers can trust them. The newest strangers online are AI agents, and they're starting to shop. ScopePay brings that same trust to them, on PayPal.</p>
+  </div>
+  <div class="tl">
+    <div><b>1998–2002</b><br><span class="muted">PayPal makes it safe to pay a stranger by email.</span></div>
+    <div><b>2014</b><br><span class="muted">Network tokens and wallets hide your card from merchants.</span></div>
+    <div><b>2025–26</b><br><span class="muted">AI agents start buying. Nobody can see what you asked for.</span></div>
+    <div><b style="color:var(--gold)">Now</b><br><span class="muted">ScopePay: scoped codes, enforced rules and proof, settled on PayPal.</span></div>
+  </div>
+</div></section>
+
+<section><div class="wrap" style="text-align:center">
+  <h2>Your AI is ready to shop. <span class="serif">Give it a scope.</span></h2>
+  <p class="lead" style="margin:0 auto 26px">Built for the PayPal AI Hackathon 2026.</p>
+  <a class="btn gold" href="/demo" onclick="go('demo');return false">Try the demo →</a>
+</div></section>
+</div>
+
+<!-- ============ DEMO ============ -->
+<div class="page" id="demo"><section><div class="wrap">
+  <div class="eyebrow">Demo</div>
+  <h1 style="font-size:52px">See ScopePay <span class="serif">work.</span></h1>
+  <p class="lead">Everything below runs on the PayPal sandbox. No real money moves.</p>
+  <div class="video" style="margin:34px 0">▶ Demo video (under 3 minutes) coming soon</div>
+
+  <h2 style="font-size:30px">Try it yourself</h2>
+  <div class="step"><div class="n">1</div><div><h3>Link PayPal once</h3><span class="muted">Approve a sandbox buyer through PayPal Vault. That's the only PayPal popup you'll see.</span></div><a class="btn" href="/wallet" target="_blank">Open wallet</a></div>
+  <div class="step"><div class="n">2</div><div><h3>Generate a code</h3><span class="muted">Set a cap, an expiry, a merchant lock, and who it's for (you or an AI agent).</span></div><a class="btn ghost" href="/wallet" target="_blank">Generate</a></div>
+  <div class="step"><div class="n">3</div><div><h3>Fast Pay at Greenleaf Grocer</h3><span class="muted">Fill a basket, paste the code. Under the cap it's paid into the merchant's PayPal; over it, declined with a reason.</span></div><a class="btn ghost" href="/store?m=greenleaf" target="_blank">Shop groceries</a></div>
+  <div class="step"><div class="n">4</div><div><h3>Try the merchant lock</h3><span class="muted">Use a Greenleaf-only code at Northside Electronics and watch it get refused.</span></div><a class="btn ghost" href="/store?m=northside" target="_blank">Shop electronics</a></div>
+  <div class="step"><div class="n">5</div><div><h3>Open the evidence</h3><span class="muted">Every payment links to a printable evidence record. Pay with the PYUSD rail to try dispute, refund and release.</span></div><a class="btn ghost" href="/wallet#activity" target="_blank">See activity</a></div>
+
+  <h2 style="font-size:30px;margin-top:56px">What's built</h2>
+  <table class="status">
+    <tr><th>Feature</th><th>PayPal / tech</th><th>Status</th></tr>
+    <tr><td>Link PayPal once, pay with no popup</td><td>Vault (payment tokens), Orders v2</td><td><span class="chip ok">Live in sandbox</span></td></tr>
+    <tr><td>Scoped codes: cap, expiry, merchant lock, revoke</td><td>ScopePay rules engine</td><td><span class="chip ok">Live</span></td></tr>
+    <tr><td>Merchant gets paid in their own PayPal</td><td>Orders v2 + Payouts</td><td><span class="chip ok">Built</span></td></tr>
+    <tr><td>Hash-chained evidence trail</td><td>SHA-256 ledger, evidence pages</td><td><span class="chip ok">Live</span></td></tr>
+    <tr><td>Reversible PYUSD payments</td><td>PayCodeEscrow.sol, PYUSD on Sepolia</td><td><span class="chip">Simulated · contract written</span></td></tr>
+    <tr><td>AI shopping agent with intent checks</td><td>LLM agent + PayPal Agent Toolkit</td><td><span class="chip">In progress</span></td></tr>
+  </table>
+  <p class="muted" style="margin-top:22px">Run it locally: double-click <code>PayCodes.command</code>, or <code>uvicorn app:app --port 8001</code>.</p>
+</div></section></div>
+
+<!-- ============ BLOG ============ -->
+<div class="page" id="blog"><section><div class="wrap">
+  <div id="bloglist">
+    <div class="eyebrow">Blog</div>
+    <h1 style="font-size:52px">Notes from <span class="serif">the build.</span></h1>
+    <div id="posts"></div>
+  </div>
+  <article id="postview" style="display:none"></article>
+</div></section></div>
+
+<footer><div class="wrap"><span><b style="color:var(--navy)">ScopePay</b> · built for the PayPal AI Hackathon 2026 · London</span><span>Sandbox demo. Not affiliated with or endorsed by PayPal.</span></div></footer>
+
+<script>
+// ---------- tabs ----------
+function go(t,push=true){document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===t));
+ document.querySelectorAll('.tabs a[data-t]').forEach(a=>a.classList.toggle('on',a.dataset.t===t));
+ if(push)history.pushState({t},'',t==='home'?'/':'/'+t);if(t==='blog')showList();window.scrollTo(0,0);if(t==='home')playChat()}
+window.onpopstate=()=>route(false);
+function route(push){const p=location.pathname.replace(/^\//,'').split('/');const t=['demo','blog'].includes(p[0])?p[0]:'home';go(t,push);if(t==='blog'&&p[1])openPost(p[1],false)}
+
+// ---------- hero chat ----------
+const SCRIPT=[['me','Get groceries for the week. £60 max, Greenleaf only, nothing with alcohol.'],
+ ['ai','On it. I\'ll ask your ScopePay wallet for a code scoped to that.'],
+ ['sheet',`<div class="row"><span class="pp">Pay<b>Pal</b> · ScopePay code</span><span class="chip ok">ACTIVE</span></div><div class="row"><span class="muted">Cap</span><b>£60.00</b></div><div class="row"><span class="muted">Merchant</span><b>Greenleaf Grocer only</b></div><div class="row"><span class="muted">Expires</span><b>in 2 hours</b></div><div class="row"><span class="muted">Issued to</span><b>🤖 your agent</b></div>`],
+ ['ai','Basket: £57.40. Paying with the code… <span class="chip ok">APPROVED</span> Paid into Greenleaf\'s PayPal.'],
+ ['ai','I also tried to add a £9 bottle of wine. <span class="chip bad">DECLINED</span> over your cap, and you said no alcohol. Removed it.'],
+ ['me','Perfect 🎉']];
+let timers=[];function playChat(){const c=document.getElementById('chat');if(!c)return;timers.forEach(clearTimeout);timers=[];c.innerHTML='';
+ SCRIPT.forEach(([who,html],i)=>timers.push(setTimeout(()=>{const d=document.createElement('div');d.className=who==='sheet'?'sheet':'msg '+who;d.innerHTML=html;c.appendChild(d)},500+i*1300)));
+ timers.push(setTimeout(playChat,500+SCRIPT.length*1300+5000))}
+
+// ---------- blog ----------
+const POSTS=[
+{slug:'a-payment-can-succeed-and-still-be-wrong',date:'5 Nov 2026',title:'A payment can succeed and still be wrong',teaser:'Why spending limits aren\'t enough for AI agents, and what an evidence trail adds.',body:`
+<p>Vignesh Sreedhar's essay <a href="https://x.com/vigstar1/status/2116973323460735200" target="_blank">"Agentic commerce is at an impasse"</a> opens with a hotel: an agent books a $580 room under a $600 budget, but picks the non-refundable rate. The card was valid, the merchant was real, the amount was in budget, and it was still the wrong purchase.</p>
+<p>That's the problem we're building for. Today an agent pays in one of four ways: your real card stored in a vault, a card network's agent token, a virtual card from an intermediary, or a prepaid stablecoin balance. Each one moves money. None of them lets the merchant, the issuer or you prove afterwards what you actually asked for.</p>
+<h3>What ScopePay does differently</h3>
+<ul><li><b>The agent never holds a credential.</b> It gets a code scoped to a cap, a merchant and a time window.</li>
+<li><b>Rules decide, not the agent.</b> The agent proposes a payment; ScopePay's checks approve or decline it before PayPal is called.</li>
+<li><b>Every decision is recorded.</b> The rules, the basket, each check and PayPal's IDs go into a hash-chained evidence record anyone in the dispute can read.</li></ul>
+<p>Limits are only half the answer: the hotel booking was within its limits. Next we're adding intent mandates, so "refundable only" or "no alcohol" is checked against the line items before payment.</p>`},
+{slug:'why-paypal',date:'3 Nov 2026',title:'Why build the agent wallet on PayPal?',teaser:'PayPal already sits on both sides of the payment. That turns out to matter a lot.',body:`
+<p>The hard part of agentic payments isn't moving money. It's getting every party to trust the payment: the shopper, the merchant, and whoever handles the dispute.</p>
+<p>Card networks need issuers to cooperate, and some big ones won't provision agent tokens. Intermediaries issuing virtual cards add a second leg and squeeze the economics. PayPal is different: it's the consumer's wallet, the merchant's checkout and the dispute process, in one place.</p>
+<h3>The PayPal pieces we use</h3>
+<ul><li><b>Vault</b>: the shopper approves PayPal once; we keep a token, never their login.</li>
+<li><b>Orders v2</b>: we charge that token with no popup, with line items attached.</li>
+<li><b>Payouts</b>: the merchant receives their money in their own PayPal account.</li>
+<li><b>PYUSD</b>: an optional rail where payments sit in escrow during a refund window.</li></ul>
+<p>Merchants don't need to adopt anything new to get paid: a ScopePay payment arrives as a PayPal payment, with proof of what the shopper authorised.</p>`},
+{slug:'what-broke',date:'2 Nov 2026',title:'What broke: BILLING_AGREEMENT_NOT_FOUND',teaser:'Paying the merchant instead of ourselves was harder than one line of code.',body:`
+<p>Our first version charged every payment into our own sandbox account. Wrong: the money should reach the store. PayPal lets you name a payee on an order, so we added the store's account as payee.</p>
+<p>Every payment then failed with <code>BILLING_AGREEMENT_NOT_FOUND</code>. The saved PayPal permission (the billing agreement) belongs to the app that created it. Name another account as payee and PayPal looks for the agreement there, and doesn't find it.</p>
+<p>Our fix settles in two legs: capture into the ScopePay account, then pay the merchant straight away through the Payouts API. Both legs are written into the evidence record. In production, PayPal's multiparty onboarding would let the merchant be paid directly in a single leg.</p>`}];
+function showList(){document.getElementById('bloglist').style.display='block';const v=document.getElementById('postview');v.style.display='none';
+ document.getElementById('posts').innerHTML=POSTS.map(p=>`<div class="post" onclick="openPost('${p.slug}')"><div class="meta">${p.date}</div><h3 style="font-size:24px;margin:6px 0">${p.title}</h3><div class="muted">${p.teaser}</div></div>`).join('')}
+function openPost(slug,push=true){const p=POSTS.find(x=>x.slug===slug);if(!p)return showList();if(push)history.pushState({},'','/blog/'+slug);
+ document.getElementById('bloglist').style.display='none';const v=document.getElementById('postview');v.style.display='block';
+ v.innerHTML=`<a href="/blog" onclick="history.pushState({},'','/blog');showList();return false">← All posts</a><div class="meta muted" style="margin-top:18px">${p.date}</div><h2>${p.title}</h2>${p.body}`;window.scrollTo(0,0)}
+route(false);
+</script></body></html>

@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demo store</title><link rel="stylesheet" href="/static/style.css?v=5"></head><body class="store">
+<div class="storehero"><div class="in">
+  <div><h1 id="brand">Store</h1><p id="tagline"></p></div>
+  <div class="accept">⚡ Accepts ScopePay codes · <span id="payee">demo merchant</span></div>
+</div></div>
+<main class="grid2" style="grid-template-columns:1.9fr 1fr">
+  <section><h2 id="shoptitle">Shop</h2><div class="items" id="items"></div></section>
+  <section class="receipt"><h2>Your basket</h2><div id="basket" class="muted">Your basket is empty. Add something from the shop.</div>
+    <hr><div class="total"><span>Total</span><span id="total">£0.00</span></div><hr>
+    <label>Settle with</label>
+    <div class="rails">
+      <label><input type="radio" name="rail" value="paypal" checked> PayPal, instant</label>
+      <label><input type="radio" name="rail" value="pyusd"> PYUSD escrow</label>
+    </div><small id="railnote">Paid instantly from the linked PayPal.</small>
+    <label>Fast Pay with a ScopePay code</label><input id="code" placeholder="SP-XXXX-XXXX-XXXX">
+    <p><button id="pay">⚡ Fast Pay</button></p><div class="paywith">Settled through PayPal by ScopePay</div><div id="result"></div></section>
+</main>
+<script>
+const CATALOG={greenleaf:{color:"#1f7a4d",tagline:"Fresh groceries from local growers, delivered today.",title:"Fresh this week",items:[["🍎","Apples (6)",2.4],["🥑","Avocados (2)",2.0],["🍞","Sourdough loaf",3.2],["🧀","Cheddar 400g",4.5],["🥛","Oat milk 1L",1.8],["🍝","Pasta 500g",1.1],["🥦","Broccoli",0.9],["☕","Coffee beans",6.5],["🍫","Dark chocolate",2.2]]},
+ northside:{color:"#4B3BC8",tagline:"Cables, chargers and small gadgets, next-day.",title:"Bestsellers",items:[["🔌","USB-C cable",8.99],["🎧","Earbuds",24.99],["🔋","Power bank",19.5],["🖱️","Wireless mouse",14.0],["💡","Smart bulb",9.5],["⌨️","Keyboard",34.0]]}};
+const MID=new URLSearchParams(location.search).get('m')||'greenleaf', cat=CATALOG[MID]||CATALOG.greenleaf, items=cat.items;
+document.documentElement.style.setProperty('--brand',cat.color);document.getElementById('tagline').textContent=cat.tagline;document.getElementById('shoptitle').textContent=cat.title;
+const basket={};const $=id=>document.getElementById(id);const gbp=n=>'£'+n.toFixed(2);
+fetch('/api/merchants').then(r=>r.json()).then(ms=>{const m=ms[MID];document.title=m.name;$('brand').textContent=`${m.emoji} ${m.name}`;$('payee').textContent=m.payee_email?`paid into ${m.payee_email}`:'fictional demo merchant'});
+$('items').innerHTML=items.map((it,i)=>`<div class="item" id="it${i}"><div class="emoji">${it[0]}</div><div class="name">${it[1]}</div><div class="price">${gbp(it[2])}</div><button onclick="add(${i})">Add to basket</button></div>`).join('');
+function total(){return Object.entries(basket).reduce((s,[i,q])=>s+items[i][2]*q,0)}
+function render(){const e=Object.entries(basket).filter(([,q])=>q>0);$('basket').innerHTML=e.length?e.map(([i,q])=>`<div class="line"><span>${q} × ${items[i][1]}</span><span>${gbp(items[i][2]*q)}<a href="#" aria-label="Remove one ${items[i][1]}" onclick="rem(${i});return false">✕</a></span></div>`).join(''):'Your basket is empty. Add something from the shop.';items.forEach((_,i)=>{const el=document.getElementById('it'+i);if(el)el.classList.toggle('added',(basket[i]||0)>0)});$('total').textContent=gbp(total())}
+function add(i){basket[i]=(basket[i]||0)+1;render()} function rem(i){basket[i]--;render()}
+$('pay').onclick=async()=>{const amt=+total().toFixed(2);if(!amt){$('result').innerHTML='<div class="notice bad">Add at least one item before paying.</div>';return}
+  const lines=Object.entries(basket).filter(([,q])=>q>0).map(([i,q])=>({name:items[i][1],qty:q,price:items[i][2]}));
+  $('pay').disabled=true;$('pay').textContent='Processing…';
+  try{const r=await fetch('/api/redeem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('code').value,amount:amt,merchant_id:MID,basket:lines,channel:'human',rail:rail()})});const j=await r.json();
+    const ev=j.evidence_id?` · <a href="/evidence/${j.evidence_id}" target="_blank">evidence ${j.evidence_id}</a>`:'';
+    $('result').innerHTML=j.approved?(j.rail=='pyusd_escrow'?`<div class="notice ok">🔒 ${amt.toFixed(2)} PYUSD escrowed for ${j.paid_to}<br><small>escrow #${j.escrow_payment_id} · ${j.mode}${j.tx_link?` · <a href="${j.tx_link}" target="_blank">tx</a>`:''}${ev}</small></div>`:`<div class="notice ok">✅ Paid ${gbp(amt)} to ${j.paid_to}<br><small>PayPal order ${j.paypal_order_id} · ${j.capture_status}${ev}</small></div>`):`<div class="notice bad">❌ Declined: ${j.reason||j.error}<br><small>${ev}</small></div>`;
+    if(j.approved){for(const k in basket)delete basket[k];render()}}
+  catch(e){$('result').innerHTML=`<div class="notice bad">${e.message}</div>`}
+  $('pay').disabled=false;$('pay').textContent='⚡ Fast Pay'};
+document.querySelectorAll('input[name=rail]').forEach(r=>r.onchange=()=>{const v=rail();$('railnote').textContent=v=='pyusd'?'Held in a PYUSD escrow contract; refundable during the refund window.':'Paid instantly from the linked PayPal.'});
+function rail(){return document.querySelector('input[name=rail]:checked').value}
+render();
+</script></body></html>

@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay · Live demo</title><link rel="stylesheet" href="/static/site/site.css?v=5"></head><body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/preview"><svg viewBox="0 0 26 26" aria-hidden="true"><rect x="1.5" y="5" width="23" height="16" rx="4" fill="none" stroke="#0E2340" stroke-width="2.4"/><circle cx="18" cy="13" r="3.4" fill="#2357F5"/><path d="M6 10h6M6 15h4" stroke="#0E2340" stroke-width="2.4" stroke-linecap="round"/></svg>ScopePay</a>
+  <nav><a href="/preview">Home</a><a href="/preview/demo" aria-current="page">Demo</a><a href="/preview/blog">Blog</a></nav>
+  <a class="btn primary cta" href="/preview/demo">Try the live demo</a>
+</div></header>
+<main class="wrap">
+  <div class="demohead">
+    <h1 style="font-size:clamp(38px,5vw,60px)">Try it on the PayPal sandbox.</h1>
+    <p>Everything below is the working app: a wallet that issues ScopePay codes, two shops that accept them, and the evidence trail behind every payment.</p>
+  </div>
+  <ol class="steps">
+    <li><b>Link PayPal</b>In the Wallet tab, link a sandbox buyer once (the account ending @personal.example.com).</li>
+    <li><b>Generate a code</b>Set a cap, an expiry and optionally lock it to one shop. Copy the code.</li>
+    <li><b>Shop and pay</b>Open Greenleaf Grocer, fill a basket, paste the code and press Fast Pay.</li>
+    <li><b>Break a rule</b>Go over the cap or use the code at Northside. Open the evidence record to see why it was declined.</li>
+  </ol>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-src="/wallet">Wallet</button>
+    <button role="tab" aria-selected="false" data-src="/store?m=greenleaf">Greenleaf Grocer</button>
+    <button role="tab" aria-selected="false" data-src="/store?m=northside">Northside Electronics</button>
+    <a class="btn" style="margin-left:auto;align-self:center;padding:9px 14px;margin-bottom:6px" id="newtab" href="/wallet" target="_blank">Open in new tab</a>
+  </div>
+  <div class="frame"><iframe id="app" src="/wallet" title="ScopePay demo"></iframe></div>
+  <p style="margin:18px 0 80px;color:var(--muted);font-size:15px">Linking PayPal opens PayPal's sandbox approval page; if your browser blocks it inside the frame, use “Open in new tab”.</p>
+</main>
+<footer><div class="wrap"><span>ScopePay, a PayPal AI Hackathon 2026 project</span><span>Independent project. Not affiliated with or endorsed by PayPal. Sandbox only, no real money.</span></div></footer>
+<script>
+const tabs=[...document.querySelectorAll('[role=tab]')],f=document.getElementById('app'),nt=document.getElementById('newtab');
+function show(b){tabs.forEach(t=>t.setAttribute('aria-selected',t===b));f.src=b.dataset.src;nt.href=b.dataset.src;try{localStorage.setItem('sp-tab',b.dataset.src)}catch(e){}}
+tabs.forEach(b=>b.onclick=()=>show(b));
+let saved;try{saved=localStorage.getItem('sp-tab')}catch(e){};const t=tabs.find(b=>b.dataset.src===saved);if(t)show(t);
+</script></body></html>

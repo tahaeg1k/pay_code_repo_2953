@@ -1,0 +1,134 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay · Spending rules for AI agents, built on PayPal</title>
+<meta name="description" content="ScopePay gives AI agents a PayPal-backed payment code with a cap, a merchant lock and an expiry, and keeps proof of every payment.">
+<link rel="stylesheet" href="/static/site/site.css?v=5"></head><body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/preview"><svg viewBox="0 0 26 26" aria-hidden="true"><rect x="1.5" y="5" width="23" height="16" rx="4" fill="none" stroke="#0E2340" stroke-width="2.4"/><circle cx="18" cy="13" r="3.4" fill="#2357F5"/><path d="M6 10h6M6 15h4" stroke="#0E2340" stroke-width="2.4" stroke-linecap="round"/></svg>ScopePay</a>
+  <nav><a href="/preview" aria-current="page">Home</a><a href="/preview/demo">Demo</a><a href="/preview/blog">Blog</a></nav>
+  <a class="btn primary cta" href="/preview/demo">Try the live demo</a>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <div>
+    <h1>Give your AI agent a PayPal with rules.</h1>
+    <p class="lede">Hand your agent a ScopePay code, not your login. It can spend up to a cap, at the shops you allow, until the code expires. Every payment comes with proof.</p>
+    <div class="actions"><a class="btn primary" href="/preview/demo">Try the live demo</a><a class="btn" href="#how">See how it works</a></div>
+    <small>Runs on the PayPal sandbox. Built for the PayPal AI Hackathon 2026.</small>
+  </div>
+
+  <div class="voucher" id="voucher" aria-label="Example ScopePay code being used by a grocery agent">
+    <svg class="guil" id="guil" viewBox="0 0 520 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+    <div class="top"><b>ScopePay code</b><span>backed by your PayPal</span></div>
+    <div class="code">SP-8D8F-6B37-DA55</div>
+    <dl class="terms">
+      <div><dt>Spending cap</dt><dd>£60.00</dd></div>
+      <div><dt>Only at</dt><dd>Greenleaf Grocer</dd></div>
+      <div><dt>Expires</dt><dd>in 2 hours</dd></div>
+      <div><dt>Held by</dt><dd>🤖 Grocery agent</dd></div>
+    </dl>
+    <div class="meter"><i id="meter"></i></div>
+    <div class="meterlabel"><span id="left">£60.00 left</span><span>of £60.00</span></div>
+    <ul class="ledger" id="ledger"></ul>
+    <div class="stamp" id="stamp">DECLINED</div>
+    <div class="agentline" id="agentline">The agent never sees a PayPal password or card number.</div>
+  </div>
+</div></section>
+
+<section class="block" id="how"><div class="wrap">
+  <div class="head">
+    <h2>Built on PayPal, end to end.</h2>
+    <p>Every pound in ScopePay moves through PayPal. Follow one grocery order from the buyer's wallet to the shop's account.</p>
+  </div>
+  <ol class="path">
+    <li><div class="dot">1</div><h3>Link PayPal once</h3><div class="api">PayPal Vault</div><p>The buyer approves PayPal a single time. ScopePay never holds their password.</p></li>
+    <li><div class="dot">2</div><h3>Charge without a popup</h3><div class="api">Orders v2 with vault_id</div><p>When a code passes its rules, the saved PayPal is charged instantly, with the basket's line items attached.</p></li>
+    <li><div class="dot">3</div><h3>Pay the shop</h3><div class="api">Payouts</div><p>The merchant's share lands in the merchant's own PayPal account, recorded against the order.</p></li>
+    <li class="opt"><div class="dot">4</div><h3>Or hold it in escrow</h3><div class="api">PYUSD on Sepolia</div><p>Optional: settle in PayPal USD inside a refund window, so an agent's mistake can be undone.</p></li>
+  </ol>
+  <div class="paypalband"><b>Why PayPal?</b><span>It's already the buyer's wallet, the merchant's checkout and the place disputes get settled. That makes it the one network that can carry an agent's instructions from start to finish.</span></div>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <div class="head"><h2>Your rules, checked on every payment.</h2><p>Each code carries its own limits. The agent proposes a purchase; ScopePay's rules decide, before any money moves.</p></div>
+  <div class="rules">
+    <div><h3>Spending cap</h3><p>£60 for the week's groceries, tracked across every purchase on the code.</p></div>
+    <div><h3>Merchant lock</h3><p>A Greenleaf code is declined at any other shop, even one that takes PayPal.</p></div>
+    <div><h3>Expiry</h3><p>From 15 minutes to 7 days. After that the code is worthless.</p></div>
+    <div><h3>Single or multi-use</h3><p>One purchase and done, or several until the cap runs out.</p></div>
+    <div><h3>Revoke anytime</h3><p>Cancel a code from your wallet and the next payment attempt is refused.</p></div>
+    <div><h3>No credentials shared</h3><p>Codes are shown once and stored only as a hash. Your PayPal details stay with PayPal.</p></div>
+  </div>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <div class="head"><h2>Proof for every payment, approved or not.</h2><p>Each step becomes a record chained to the one before it, so history can't be quietly edited. Hand it to the shop, to PayPal or to an arbiter if a purchase is disputed.</p></div>
+  <div class="chain">
+    <div class="rec"><span class="st info">Consent</span><b>PayPal linked</b>Buyer approved saving PayPal for future payments.<code>hash 3f1a…9c02</code></div>
+    <div class="rec"><span class="st info">Rules set</span><b>Code issued</b>£60 cap · Greenleaf only · 2 hours · to grocery agent.<code>prev 3f1a…9c02</code></div>
+    <div class="rec"><span class="st ok">Approved</span><b>£11.30 at Greenleaf</b>4 items, every check passed, PayPal capture recorded.<code>prev 8b44…e1d7</code></div>
+    <div class="rec"><span class="st no">Declined</span><b>£79.00 at Greenleaf</b>Over the £48.70 left on the code. No money moved.<code>prev c09e…54aa</code></div>
+  </div>
+</div></section>
+
+<section class="block mafia"><div class="wrap">
+  <div>
+    <h2>The PayPal Mafia taught the internet to pay. Agents are next.</h2>
+    <p>Around 2000, a small team at PayPal worked out how strangers could send money online safely. Its alumni went on to build so much of the startup world that the press gave them a nickname.</p>
+    <p>The next shift is software that buys things for you. That needs the same thing PayPal got right the first time: trust that holds up when something goes wrong. ScopePay is our audition.</p>
+  </div>
+  <div class="file" aria-label="Case file">
+    <figure class="mugshot" aria-label="Illustration: a silhouette in a fedora and pinstripe suit">
+      <svg viewBox="0 0 120 140" aria-hidden="true">
+        <rect width="120" height="140" fill="#2B3F5E"/>
+        <g stroke="#3C5276" stroke-width="1"><path d="M0 14 H120"/><path d="M0 28 H120"/><path d="M0 42 H120"/><path d="M0 56 H120"/><path d="M0 70 H120"/><path d="M0 84 H120"/><path d="M0 98 H120"/><path d="M0 112 H120"/><path d="M0 126 H120"/></g>
+        <path d="M18 140 C20 104 38 92 60 92 C82 92 100 104 102 140Z" fill="#0E2340"/>
+        <g stroke="#2B3F5E" stroke-width="1.4" opacity=".9"><path d="M34 140 L40 100"/><path d="M46 140 L50 96"/><path d="M74 140 L70 96"/><path d="M86 140 L80 100"/></g>
+        <path d="M52 92 L60 112 L68 92 Z" fill="#F3EBDD"/><path d="M57 96 L60 118 L63 96 Z" fill="#D23B32"/>
+        <ellipse cx="60" cy="70" rx="17" ry="20" fill="#0E2340"/>
+        <path d="M30 56 C40 52 80 52 90 56 C84 60 36 60 30 56Z" fill="#0E2340"/>
+        <path d="M42 56 C42 38 50 32 60 32 C70 32 78 38 78 56Z" fill="#0E2340"/>
+        <path d="M42 50 H78 V55 H42Z" fill="#D23B32" opacity=".85"/>
+      </svg>
+      <figcaption>Identity withheld</figcaption>
+    </figure>
+    <h3>Case file: ScopePay</h3>
+    <dl>
+      <dt>Objective</dt><dd>Let agents spend without handing over the keys</dd>
+      <dt>Methods</dt><dd>Caps, merchant locks, expiry, evidence</dd>
+      <dt>Rails</dt><dd>PayPal, PYUSD escrow</dd>
+      <dt>Associates</dt><dd><span class="redact">the next generation</span></dd>
+      <dt>Status</dt><dd>Live in sandbox</dd>
+    </dl>
+    <div class="seal">PayPal AI Hackathon 2026</div>
+  </div>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Let your agent shop. Keep the receipts.</h2>
+  <div class="actions"><a class="btn primary" href="/preview/demo">Try the live demo</a><a class="btn" href="/preview/blog">Read the blog</a></div>
+</div></section>
+</main>
+
+<footer><div class="wrap"><span>ScopePay, a PayPal AI Hackathon 2026 project</span><span>Independent project. Not affiliated with or endorsed by PayPal. Sandbox only, no real money.</span></div></footer>
+
+<script>
+/* engraved banknote pattern */
+(function(){const s=document.getElementById('guil');let d='';const cx=410,cy=330;
+ for(let k=0;k<26;k++){let p='';const R=60+k*9,r=R*0.18,n=9;for(let t=0;t<=360;t+=2){const a=t*Math.PI/180,rr=R+r*Math.sin(n*a+k*.35);p+=(t?'L':'M')+(cx+rr*Math.cos(a)).toFixed(1)+','+(cy+rr*Math.sin(a)).toFixed(1)}d+=`<path d="${p}Z" fill="none" stroke="#2357F5" stroke-opacity="${(.10+.012*(k%5)).toFixed(3)}" stroke-width=".8"/>`}
+ for(let k=0;k<14;k++){let p='';for(let x=-10;x<=530;x+=6){const y=40+k*7+6*Math.sin(x/22+k*.6);p+=(x>-10?'L':'M')+x+','+y.toFixed(1)}d+=`<path d="${p}" fill="none" stroke="#0E2340" stroke-opacity=".07" stroke-width=".7"/>`}
+ s.innerHTML=d})();
+/* one orchestrated sequence: the agent shops, the cap drains, then a decline */
+(function(){
+ const cap=60, steps=[["ok","Oat milk ×2",3.60],["ok","Sourdough loaf",3.20],["ok","Cheddar 400g",4.50],["no","Coffee machine",79.00,"over the cap"]];
+ const L=document.getElementById('ledger'),M=document.getElementById('meter'),left=document.getElementById('left'),st=document.getElementById('stamp'),line=document.getElementById('agentline');
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ function render(i){let spent=0;L.innerHTML='';st.classList.remove('on');
+  steps.slice(0,i).forEach(([k,n,a,why])=>{if(k=='ok')spent+=a;const li=document.createElement('li');li.innerHTML=`<span class="${k}">${k=='ok'?'✓':'✕'}</span><span>${n}${why?` <em>${why}</em>`:''}</span><span>£${a.toFixed(2)}</span>`;L.appendChild(li);requestAnimationFrame(()=>li.classList.add('in'))});
+  M.style.width=((cap-spent)/cap*100)+'%';left.textContent='£'+(cap-spent).toFixed(2)+' left';
+  if(i==steps.length){st.classList.add('on');line.textContent='Declined before any money moved. Evidence record saved.'}else line.textContent=i?'Agent is shopping…':'The agent never sees a PayPal password or card number.'}
+ if(reduce){render(steps.length);return}
+ let i=0;render(0);setInterval(()=>{i=i>=steps.length+2?0:i+1;render(Math.min(i,steps.length))},1500);
+})();
+</script>
+</body></html>

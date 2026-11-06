@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay · Blog</title><link rel="stylesheet" href="/static/site/site.css?v=5"></head><body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/preview"><svg viewBox="0 0 26 26" aria-hidden="true"><rect x="1.5" y="5" width="23" height="16" rx="4" fill="none" stroke="#0E2340" stroke-width="2.4"/><circle cx="18" cy="13" r="3.4" fill="#2357F5"/><path d="M6 10h6M6 15h4" stroke="#0E2340" stroke-width="2.4" stroke-linecap="round"/></svg>ScopePay</a>
+  <nav><a href="/preview">Home</a><a href="/preview/demo">Demo</a><a href="/preview/blog" aria-current="page">Blog</a></nav>
+  <a class="btn primary cta" href="/preview/demo">Try the live demo</a>
+</div></header>
+<main id="main"></main>
+<footer><div class="wrap"><span>ScopePay, a PayPal AI Hackathon 2026 project</span><span>Independent project. Not affiliated with or endorsed by PayPal. Sandbox only, no real money.</span></div></footer>
+<script src="/static/site/posts.js"></script>
+<script>
+const m=document.getElementById('main'), slug=new URLSearchParams(location.search).get('p'), post=POSTS.find(p=>p.slug===slug);
+const fmt=d=>new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+if(post){document.title=post.title+' · ScopePay';
+ m.innerHTML=`<article class="post"><a class="back" href="/preview/blog">All posts</a><h1>${post.title}</h1><div class="meta">${fmt(post.date)}, ${post.read} min read</div>${post.body}</article>`}
+else{m.innerHTML=`<div class="wrap"><div class="bloghead"><h1 style="font-size:clamp(40px,5.5vw,68px)">Notes from the build.</h1><p class="lede" style="margin-top:14px">What we learned building spending rules for AI agents on PayPal.</p></div>
+ <div class="posts">${POSTS.map(p=>`<a class="post-link" href="/preview/blog?p=${p.slug}"><time>${fmt(p.date)}</time><h3>${p.title}</h3><p>${p.summary}</p></a>`).join('')}</div></div>`}
+</script></body></html>

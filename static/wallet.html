@@ -1,0 +1,141 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay Wallet</title><link rel="stylesheet" href="/static/style.css?v=5"></head><body class="walletpage">
+<header><b>ScopePay</b><nav><a href="/preview">Home</a><a href="/preview/demo">Demo</a><a class="on" href="/wallet">Wallet</a><a href="/store?m=greenleaf" target="_blank">Greenleaf Grocer ↗</a><a href="/store?m=northside" target="_blank">Northside Electronics ↗</a></nav></header>
+<main>
+  <div class="pagehead">
+    <div><h1>Your wallet</h1><p>Give agents spending power without handing over your PayPal login.</p></div>
+    <span id="chain"></span>
+  </div>
+
+  <div class="walletgrid">
+    <aside>
+      <div id="wallet"></div>
+      <div id="linkmsg"></div>
+      <section class="side">
+        <h2>Shops that accept your codes</h2>
+        <div id="merchants"></div>
+      </section>
+      <section class="side">
+        <h2>PYUSD escrow</h2>
+        <div id="escrow" class="muted"></div>
+      </section>
+    </aside>
+
+    <section class="card mint">
+      <h2>Generate a ScopePay code</h2>
+      <label for="label">What is it for?</label><input id="label" placeholder="e.g. Weekly groceries">
+      <div class="row">
+        <div><label for="cap">Spending cap (£)</label><input id="cap" type="number" value="20" min="1" step="0.01"></div>
+        <div><label for="minutes">Expires in</label><select id="minutes"><option value="15">15 minutes</option><option value="60" selected>1 hour</option><option value="1440">1 day</option><option value="10080">7 days</option></select></div>
+      </div>
+      <div class="row">
+        <div><label for="lock">Only usable at</label><select id="lock"><option value="">Any shop</option></select></div>
+        <div><label for="issued">Who will use it?</label><select id="issued"><option value="user">Me</option><option value="ai_agent">My AI agent</option></select></div>
+      </div>
+      <label class="check"><input id="multi" type="checkbox"> Allow several payments until the cap is used up</label>
+      <label for="intent">What may it buy? <span class="muted">(optional, checked by AI on every payment)</span></label>
+      <textarea id="intent" rows="2" placeholder="e.g. Vegetarian groceries for the week, no alcohol"></textarea>
+      <small id="aistatus"></small>
+      <div class="row">
+        <div><label for="approveover">Ask me before paying over (£)</label><input id="approveover" type="number" min="0" step="0.01" placeholder="No limit"></div>
+        <div></div>
+      </div>
+      <div class="genrow"><button id="gen">Generate code</button><small id="genhint"></small></div>
+      <div id="newcode"></div>
+    </section>
+  </div>
+
+  <section id="waitingsec" hidden>
+    <div class="sechead"><h2>Waiting for you</h2><small>Payments ScopePay paused. Approving pays exactly what is shown here, nothing else.</small></div>
+    <div id="heldmsg"></div>
+    <div class="heldlist" id="held"></div>
+  </section>
+
+  <section class="card agentcard">
+    <h2>Send your AI agent shopping</h2>
+    <p class="muted">Claude shops at a demo shop with a code you issued to it. The code stays with ScopePay's tools, and Claude never sees your PayPal.</p>
+    <label for="agtask">What should it buy?</label><input id="agtask" value="Vegetarian groceries for two for the week, about £15, at Greenleaf Grocer">
+    <div class="row">
+      <div><label for="agcode">Code for the agent</label><input id="agcode" placeholder="SP-XXXX-XXXX-XXXX" spellcheck="false" autocomplete="off"></div>
+      <div><label class="check" style="margin-top:34px"><input id="agnaive" type="checkbox"> Don't let it read the code's limits first (shows a decline and recovery)</label></div>
+    </div>
+    <div class="genrow"><button id="agrun">Run agent</button><small id="aghint"></small></div>
+    <ol class="trace" id="agtrace"></ol>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Your codes</h2><small id="codecount"></small></div>
+    <div class="notes" id="codes"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Activity</h2><small>Every payment attempt, approved or declined, with its evidence record.</small></div>
+    <ol class="timeline" id="tx"></ol>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id), gbp=n=>'£'+Number(n).toFixed(2);
+const esc=t=>String(t??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const when=s=>{const d=(Date.now()/1000-s);return d<60?'just now':d<3600?Math.floor(d/60)+' min ago':d<86400?Math.floor(d/3600)+' h ago':new Date(s*1000).toLocaleDateString('en-GB')};
+const nice=d=>{d=(d||'').replace(/^[a-z_]+: /,'');return esc(d.charAt(0).toUpperCase()+d.slice(1))};
+const left=m=>m>=1440?Math.round(m/1440)+' days':m>=60?Math.round(m/60)+' h':m+' min';
+async function api(p,b){const r=await fetch(p,{method:b?'POST':'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
+let lockFilled=false, emo={};
+const STAMP={used:'Used',expired:'Expired',revoked:'Revoked',exhausted:'Spent',in_use:'In use'};
+async function load(){
+  const s=await api('/api/state');
+  Object.values(s.merchants).forEach(m=>emo[m.name]=m.emoji);
+  if(!lockFilled){$('lock').innerHTML+=Object.entries(s.merchants).map(([k,m])=>`<option value="${k}">${m.name}</option>`).join('');lockFilled=true}
+  $('merchants').innerHTML=Object.entries(s.merchants).map(([k,m])=>`<a class="shopchip" href="/store?m=${k}" target="_blank"><span class="av">${m.emoji}</span><span><b>${m.name}</b><small>${m.payee_email?'Paid into '+m.payee_email:'No payee set: pays your own account'}</small></span></a>`).join('');
+  const e=s.escrow;$('escrow').innerHTML=e.mode=='sepolia'?`<b>Live on Ethereum Sepolia.</b> <a href="${e.explorer}" target="_blank">View contract</a><br><small>Payer ${e.payer||''}${e.payer_balance!==undefined?', '+e.payer_balance.toFixed(2)+' PYUSD':''}${e.error?' ('+e.error+')':''}</small>`:`<b>Simulated</b>, following the PayCodeEscrow contract.<br><small>Refund window ${e.window_seconds}s. Add Sepolia settings in .env to go on-chain.</small>`;
+  if(s.wallet.vault_id){$('wallet').innerHTML=`<div class="acct"><div class="acct-top"><span>Linked PayPal</span><span class="dot">● Connected</span></div><div class="acct-email">${s.wallet.email}</div><div class="acct-foot"><small>Saved in PayPal Vault · ${s.wallet.vault_id.slice(0,4)}…${s.wallet.vault_id.slice(-4)}</small><button class="linkbtn" onclick="unlink()">Unlink</button></div></div>`;$('gen').disabled=false;$('genhint').textContent=''}
+  else{$('wallet').innerHTML=`<div class="acct empty"><div class="acct-top"><span>No PayPal linked</span></div><p>Link PayPal once. Your codes then pay from it with no popup, and nobody else sees your login.</p><button class="light" onclick="link()">Link PayPal (sandbox)</button></div>`;$('gen').disabled=true;$('genhint').textContent='Link PayPal first.'}
+  $('codecount').textContent=s.codes.length?`${s.codes.filter(c=>c.status=='active').length} active of ${s.codes.length}`:'';
+  $('codes').innerHTML=s.codes.map(c=>{const pct=c.cap?Math.max(0,c.remaining/c.cap*100):0;return `<article class="note ${c.status}">
+    <div class="note-top"><b>${c.label}</b>${c.issued_to=='ai_agent'?'<span class="agent">🤖 Agent</span>':''}</div>
+    <div class="note-code">SP-<span class="mask">XXXX-XXXX</span>-${c.hint}</div>
+    <div class="gauge"><i style="width:${pct}%"></i></div>
+    <div class="note-amt"><b>${gbp(c.remaining)}</b> left of ${gbp(c.cap)}${c.reserved>0?` <small>(${gbp(c.reserved)} on hold)</small>`:''}</div>
+    ${c.intent?`<div class="note-intent">“${esc(c.intent)}”</div>`:''}${c.approve_over!=null?`<div class="note-intent">Asks you above ${gbp(c.approve_over)}</div>`:''}
+    <dl><div><dt>Only at</dt><dd>${c.merchant_name||'Any shop'}</dd></div><div><dt>Expires</dt><dd>${c.status=='active'?'in '+left(c.minutes_left):'—'}</dd></div></dl>
+    ${c.status=='active'?`<button class="ghost small" onclick="revoke('${c.hint}')">Revoke</button>`:`<div class="vstamp">${STAMP[c.status]||c.status}</div>`}
+  </article>`}).join('')||'<div class="empty-state">No codes yet. Generate one above, then use it in a shop.</div>';
+  $('tx').innerHTML=s.transactions.map(x=>`<li class="ev ${x.result}"><span class="av">${emo[x.merchant]||'🛒'}</span>
+    <div class="ev-main"><div><b>${x.merchant}</b> <span class="muted">with SP-…${x.code_hint}</span></div><small>${nice(x.detail)}</small></div>
+    <div class="ev-side"><b class="amt">${x.rail=='pyusd'?Number(x.amount).toFixed(2)+' PYUSD':gbp(x.amount)}</b><span class="pill ${x.result}">${x.result.toLowerCase()}</span></div>
+    <div class="ev-meta"><small>${when(x.time)}</small>${x.evidence_id?`<a class="evlink" href="/evidence/${x.evidence_id}" target="_blank">Evidence ${x.evidence_id}</a>`:''}</div></li>`).join('')||'<li class="empty-state">No payments yet. Use a code at Greenleaf Grocer or Northside Electronics.</li>';
+  $('aistatus').textContent=s.ai.enabled?`Checked by Claude (${s.ai.model} via ${s.ai.provider=='openrouter'?'OpenRouter':'Anthropic'}). It can only pause or block a payment, never allow one your rules refuse.`:'Add OPENROUTER_API_KEY to .env to turn on the AI check. Until then, payments on a code with an intent wait for you.';
+  const W=[...s.held.map(h=>`<article class="held"><div class="top"><div><b>${esc(h.merchant)}</b> <span class="muted">with SP-…${esc(h.code_hint)} · ${esc(h.code_label)}${h.channel=='agent'?' · 🤖 agent':''}</span></div><b class="amt">${gbp(h.amount)}</b></div>
+      <ul>${(h.basket||[]).map(i=>`<li>${esc(i.qty)}× ${esc(i.name)} <span class="muted">${gbp(i.price*i.qty)}</span></li>`).join('')}</ul>
+      <div class="why">${nice(h.reason)}</div>
+      ${(h.ai_items||[]).filter(i=>i.fits!='yes').map(i=>`<small>AI on ${esc(i.name)}: ${esc(i.fits)}${i.note?' · '+esc(i.note):''}</small>`).join('')}
+      <div class="acts"><button onclick="approveH('${esc(h.evidence_id)}','${esc(h.request_hash)}')">Approve ${gbp(h.amount)}</button><button class="ghost small" onclick="rejectH('${esc(h.evidence_id)}')">Reject</button><small>Request <code>${esc(h.request_hash.slice(0,12))}…</code> · <a href="/evidence/${esc(h.evidence_id)}" target="_blank">Evidence</a></small></div></article>`),
+    ...s.pending.map(p=>`<article class="held"><div class="top"><div><b>PayPal didn't confirm a payment</b> <span class="muted">SP-…${esc(p.hint)} at ${esc(p.merchant_id)}</span></div><b class="amt">${gbp(p.amount)}</b></div>
+      <div class="why">The amount stays reserved on the code until ScopePay checks with PayPal. Checking can never charge twice.</div>
+      <div class="acts"><button onclick="recon('${esc(p.evidence_id)}')">Check with PayPal</button><a href="/evidence/${esc(p.evidence_id)}" target="_blank">Evidence</a></div></article>`)];
+  $('waitingsec').hidden=!W.length;$('held').innerHTML=W.join('');
+  $('chain').innerHTML=s.chain.valid?`<span class="trail ok">🔒 Evidence trail intact, ${s.chain.records} records</span>`:`<span class="trail bad">⚠ Evidence trail tampered at ${s.chain.broken_at}</span>`;
+}
+async function link(){try{const {approve_url}=await api('/api/link',{});(window.top!==window?window.top:window).location.href=approve_url}catch(e){$('linkmsg').innerHTML=`<div class="notice bad">${e.message}</div>`}}
+async function unlink(){await api('/api/unlink',{});load()}
+async function revoke(h){await api(`/api/codes/${h}/revoke`,{});load()}
+const heldMsg=(ok,t)=>$('heldmsg').innerHTML=`<div class="notice ${ok?'ok':'bad'}">${t}</div>`;
+async function approveH(id,h){try{const r=await api(`/api/held/${id}/approve`,{request_hash:h});heldMsg(r.approved,r.approved?`Approved and paid to ${esc(r.paid_to||'the shop')}. Evidence ${esc(r.evidence_id)}.`:nice(r.reason))}catch(e){heldMsg(false,esc(e.message))}load()}
+async function rejectH(id){try{await api(`/api/held/${id}/reject`,{});heldMsg(true,'Rejected. The money is back on the code.')}catch(e){heldMsg(false,esc(e.message))}load()}
+async function recon(id){try{const r=await api(`/api/reconcile/${id}`,{});heldMsg(r.resolved,r.resolved?(r.approved?'PayPal confirms it was paid.':'PayPal confirms it was not charged. The money is back on the code.'):'PayPal still has no answer. Try again in a minute.')}catch(e){heldMsg(false,esc(e.message))}load()}
+const stepNote=st=>{const o=st.output||{};if(o.error)return o.error;if(st.name=='check_code')return `${o.status}, ${gbp(o.remaining||0)} left${o.intent?' · intent: '+o.intent:''}`;if(st.name=='list_products')return `${(o.products||[]).length} products at ${o.merchant||''}`;
+  if(o.approved)return `Paid ${gbp(o.amount)} · evidence ${o.evidence_id}`;if(o.held)return `Held for your approval · evidence ${o.evidence_id}`;return `Declined: ${(o.reason||'').replace(/^[a-z_]+: /,'')}`};
+$('agrun').onclick=async()=>{if(!$('agcode').value.trim()){$('aghint').textContent='Paste a code issued to your AI agent.';return}
+  $('agrun').disabled=true;$('aghint').textContent='Claude is shopping…';$('agtrace').innerHTML='';
+  try{const r=await api('/api/agent/run',{task:$('agtask').value,code:$('agcode').value.trim(),precheck:!$('agnaive').checked});
+    $('agtrace').innerHTML=r.steps.map(st=>st.kind=='say'?`<li class="say">🤖 ${esc(st.text)}</li>`:`<li><b>${esc(st.name)}</b> <code>${esc(JSON.stringify(st.input))}</code><small>${esc(stepNote(st))}</small></li>`).join('');$('aghint').textContent=''}
+  catch(e){$('aghint').textContent=e.message}
+  $('agrun').disabled=false;load()};
+$('gen').onclick=async()=>{try{const {code}=await api('/api/codes',{cap:+$('cap').value,minutes:+$('minutes').value,label:$('label').value,multi_use:$('multi').checked,merchant_lock:$('lock').value||null,issued_to:$('issued').value,intent:$('intent').value||null,approve_over:$('approveover').value===''?null:+$('approveover').value});
+  if($('issued').value=='ai_agent')$('agcode').value=code;
+  const lk=$('lock').selectedOptions[0].text, mins=$('minutes').selectedOptions[0].text;
+  $('newcode').innerHTML=`<div class="code">${code}<div class="vterms">Up to ${gbp(+$('cap').value)} · ${$('lock').value?'only at '+lk:'any shop'} · expires in ${mins}${$('issued').value=='ai_agent'?' · for your AI agent':''}${$('multi').checked?' · multi-use':''}${$('intent').value?' · “'+esc($('intent').value)+'”':''}</div></div><div class="genrow"><button onclick="navigator.clipboard.writeText('${code}');this.textContent='Copied'">Copy code</button><small>Shown once. Paste it at checkout in a shop.</small></div>`;load()}
+  catch(e){$('newcode').innerHTML=`<div class="notice bad">${e.message}</div>`}};
+const q=new URLSearchParams(location.search).get('linked');if(q=='ok')$('linkmsg').innerHTML='<div class="notice ok">PayPal linked. You can generate codes now.</div>';if(q=='cancelled')$('linkmsg').innerHTML='<div class="notice bad">Linking was cancelled on PayPal. Try again when ready.</div>';
+load();setInterval(load,4000);
+</script></body></html>
