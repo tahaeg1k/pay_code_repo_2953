@@ -1,6 +1,5 @@
 """Attack suite: each test is one way a merchant, an agent or a hijacked page could try to misuse a ScopePay code,
 and checks both the decision and whether PayPal was called. PayPal and Claude are mocked; nothing leaves the machine.
-Scenario style credit: OkyWoww/aegismandate and luongs3/agent-spend-gate (both MIT).
 Run:  python -m pytest -q tests/test_attacks.py"""
 import hashlib
 import sys

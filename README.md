@@ -100,10 +100,5 @@ python -m pytest -q          # PayPal and Claude are mocked: rules, races, idemp
 - `escrow.py` — PYUSD escrow rail (simulated or Sepolia); `contracts/paycode-escrow` — Solidity contract + tests
 - `vault_spike.py` — CLI version of the vault flow; `paypal_test.py` — basic order test
 
-## Credits
-Patterns studied in other open-source PayPal AI Hackathon projects and re-implemented here in our own code:
-reserve-before-charge (from the race condition documented by *PayPal Agentic Guardrail*), idempotency keys with an
-"uncertain" state and approval hash binding (*AgentGuard*), tighten-only AI review (*Allowance*, *Tollgate*, *PayAgent AI*),
-verified webhooks updating budgets (*Velora*), an attack-scenario test table and injection scan (*AegisMandate*, MIT),
-Ed25519-signed hash-chained receipts (*agent-spend-gate*, MIT), a planted injected listing and tighten-only auditor (*Leash*, MIT),
-and authorize-then-capture/void holds (*Allowance* by shrey-Bish and Tomiyato, MIT). `PayCodeEscrow.sol` is adapted from Circle's Refund Protocol (Apache-2.0).
+## Third-party code
+`contracts/paycode-escrow/src/PayCodeEscrow.sol` is adapted from Circle's Refund Protocol (Apache-2.0); its licence notice is kept in the file.

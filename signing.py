@@ -8,7 +8,6 @@ rebuild a "valid" chain after editing it.
 Key: EVIDENCE_SIGNING_KEY (base64 of the 32-byte raw private key) if set, otherwise a PEM file created on first
 use next to the database (git-ignored). Without the `cryptography` package records are written unsigned and
 verification reports them as unsigned rather than failing.
-Pattern credit: luongs3/agent-spend-gate (MIT), which signs hash-chained gate receipts with Ed25519.
 """
 import base64
 import hashlib

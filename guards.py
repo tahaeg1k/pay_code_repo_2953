@@ -2,9 +2,8 @@
 
 - scan_text / scan_basket: hidden characters (zero-width, bidi overrides, Unicode tag characters) and text aimed
   at an AI ("ignore previous instructions", "approved by the user", "raise the cap") in merchant or agent text.
-  Pattern credit: OkyWoww/aegismandate (MIT, attacks A-01 and A-08) and UnknownHacker1/leash (MIT, planted listing).
 - catalog_prices: when ScopePay knows a shop's catalog, every basket line must be a real product at its real
-  price, so a tampered checkout page cannot relabel a £34 keyboard as £3.40 (aegismandate A-03, PRICE_MISMATCH).
+  price, so a tampered checkout page cannot relabel a £34 keyboard as £3.40.
 """
 import re
 import unicodedata

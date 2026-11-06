@@ -124,7 +124,7 @@ class MoneySafety(Base):
         self.assertTrue(pc.verify_evidence()["valid"])
 
     def test_parallel_payments_never_exceed_cap(self):
-        """The bug from Agentic Guardrail's write-up: limits read before a slow call and written after it."""
+        """Limits read before a slow call and written after it must not let parallel payments overspend."""
         self.paypal.delay = 0.05
         code = pc.issue_code(10, 60, multi_use=True)
         results = []
