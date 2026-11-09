@@ -1,0 +1,21 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest httpx
+      - run: python -m pytest -q
+      - name: OpenAPI spec builds (for APIMatic)
+        run: python -c "import json, app; s = app.app.openapi(); print(len(s['paths']), 'API paths'); json.dump(s, open('openapi.json', 'w'), indent=1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json

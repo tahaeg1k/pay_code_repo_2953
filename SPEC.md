@@ -104,3 +104,12 @@ YouTube demo under 3 min, no third-party trademarks or music.
   Default HOLD_MODE=app. `tests/test_attacks.py` (23 attack tests); 56 offline tests pass. Existing trail (14 unsigned
   records) still verifies. Not yet run live: HOLD_MODE=authorize against the sandbox.
 - AI provider (Nov 6): ai.py uses OpenRouter's Anthropic-compatible endpoint when OPENROUTER_API_KEY is set (models anthropic/claude-haiku-5.5, anthropic/claude-sonnet-5.5), else Anthropic directly; AI_PROVIDER / AI_*_MODEL override. 34 offline tests pass.
+- Deploy, monitor, automations (Nov 8, from Marcos's plan): `render.yaml` (free web service, uvicorn with proxy headers,
+  /healthz health check, deploys after CI passes), `.github/workflows/ci.yml` (pytest + OpenAPI artifact),
+  `/dashboard` (AG Grid 33 from jsdelivr: attempts with result filters, codes, held/uncertain, evidence trail, KPIs),
+  `seed_demo_wallet()` (DEMO_VAULT_ID restores the sandbox wallet on an empty hosted store), POST
+  /api/automations/agent-run + GET /api/automations/runs/{id} (X-ScopePay-Token = AUTOMATION_TOKEN; only codes issued
+  to ai_agent; background or wait; automation_triggered evidence record), OpenAPI limited to the JSON API with tags
+  (title "ScopePay API" 0.3.0) for APIMatic. Not done on purpose: AI creating its own codes (step 4 as written), remote MCP.
+  Verified live on localhost: dashboard renders real data, /healthz, /openapi.json (25 paths, no pages), 503 without
+  AUTOMATION_TOKEN. Endpoint tests in tests/test_deploy.py run where FastAPI is installed (CI, the Mac).

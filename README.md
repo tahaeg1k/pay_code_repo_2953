@@ -83,6 +83,36 @@ Add `OPENROUTER_API_KEY` (OpenRouter's Anthropic-compatible endpoint, models `an
 | Edit a record; edit and re-hash the whole chain | `hash chain` broken; `signature` invalid |
 | Held payment rejected, or code expires first (`HOLD_MODE=authorize`) | PayPal authorization voided, budget restored |
 
+## Payment monitor (AG Grid)
+`/dashboard` shows every payment attempt, code, held payment and evidence record in AG Grid tables (sort, filter,
+paginate), with headline numbers and the trail's integrity, refreshing every 5 seconds.
+
+## Deploy to Render
+1. Push to GitHub, then in Render: **New → Blueprint** → pick the repo. `render.yaml` sets everything up.
+2. Fill the prompted values: PayPal sandbox client id/secret, payee emails, `OPENROUTER_API_KEY`, and `DEMO_VAULT_ID`
+   (the `vault_id` from your local `paycodes_db.json`, so the hosted demo starts with PayPal already linked).
+   Render generates `AUTOMATION_TOKEN` and `EVIDENCE_SIGNING_KEY`.
+3. Render deploys after the GitHub Actions tests pass (`autoDeployTrigger: checksPass`); `/healthz` is the health check.
+4. Optional: create a PayPal webhook for `https://<service>.onrender.com/webhooks/paypal` and set `PAYPAL_WEBHOOK_ID`.
+
+The free plan sleeps when idle and resets local files on restart, so the demo ledger starts empty each time.
+
+## Continuous integration
+`.github/workflows/ci.yml` runs the test suite on every push and pull request, checks the OpenAPI spec builds, and
+uploads `openapi.json` as a build artifact.
+
+## Zapier automations
+A Zap can start the shopping agent, for example "new row in a shopping-list sheet → buy it":
+**Webhooks by Zapier → POST** to `https://<service>.onrender.com/api/automations/agent-run`, header
+`X-ScopePay-Token: <AUTOMATION_TOKEN>`, JSON body `{"task": "Vegetarian groceries for two, about £15", "code": "SP-…"}`.
+- The code must already exist and be issued to "My AI agent" in the wallet. Automations spend within a code, never create one.
+- Answers at once with a `run_id` and `status_url`; add `"wait": true` to get the agent's result in the same call.
+- Each trigger is written to the evidence trail (`automation_triggered`, with the code's last 4 characters only).
+
+## API and SDKs (APIMatic)
+FastAPI publishes the API at `/openapi.json` (interactive docs at `/docs`), limited to the JSON API and grouped by tags.
+To generate client SDKs, import that URL (or the `openapi` CI artifact) into APIMatic.
+
 ## Tests
 ```bash
 pip install pytest httpx
@@ -95,7 +125,8 @@ python -m pytest -q          # PayPal and Claude are mocked: rules, races, idemp
 - `mcp_server.py` — ScopePay as an MCP server (stdio, no SDK needed); `catalog.py` — the shops' prices
 - `guards.py` — injection scan + catalog price check; `signing.py` — Ed25519 evidence signatures;
   `verify_evidence.py` — offline verifier for evidence files
-- `tests/` — offline test suite (`test_attacks.py`: the attack table above)
+- `tests/` — offline test suite; `static/dashboard.html` — AG Grid monitor
+- `render.yaml` — Render Blueprint; `.github/workflows/ci.yml` — tests + OpenAPI check on every push (`test_attacks.py`: the attack table above)
 - `app.py` — FastAPI server; `static/` — wallet and store pages
 - `escrow.py` — PYUSD escrow rail (simulated or Sepolia); `contracts/paycode-escrow` — Solidity contract + tests
 - `vault_spike.py` — CLI version of the vault flow; `paypal_test.py` — basic order test

@@ -1,0 +1,126 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScopePay Monitor</title><link rel="stylesheet" href="/static/style.css?v=6">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@33.3.0/dist/ag-grid-community.min.js"></script>
+<style>
+.dash main{max-width:1280px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0 26px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.kpi b{display:block;font:600 26px var(--display);margin-top:2px}
+.kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)} .kpi.ok b{color:var(--green)}
+.gridbox{height:380px;margin:10px 0 30px}
+.gridbox.short{height:220px}
+.ag-cell .pill{line-height:1.4}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+.tabs button{padding:6px 14px}
+.tabs button:not(.on){background:transparent;color:var(--ink);border-color:var(--line)}
+#err{margin-top:10px}
+</style></head><body class="dash">
+<header><b>ScopePay</b><nav><a href="/wallet">Wallet</a><a class="on" href="/dashboard">Monitor</a><a href="/store?m=greenleaf" target="_blank">Greenleaf Grocer ↗</a><a href="/docs" target="_blank">API ↗</a></nav></header>
+<main>
+  <div class="pagehead"><div><h1>Payment monitor</h1><p>Every code, payment attempt and evidence record, live from the ScopePay ledger. Built with AG Grid.</p></div><span id="chain"></span></div>
+  <div class="kpis" id="kpis"></div>
+  <div id="err"></div>
+
+  <section id="heldsec" hidden>
+    <div class="sechead"><h2>Waiting for approval</h2><small>Approve or reject in the <a href="/wallet">wallet</a>.</small></div>
+    <div id="heldGrid" class="gridbox short ag-theme"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Payment attempts</h2><div class="tabs" id="filters"></div></div>
+    <div id="txGrid" class="gridbox"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Codes</h2><small>Budgets, holds and the intent each code was issued with.</small></div>
+    <div id="codeGrid" class="gridbox short"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Evidence trail</h2><small id="evnote">Each record holds the hash of the one before it, so editing history breaks the chain.</small></div>
+    <div id="evGrid" class="gridbox"></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id), gbp=n=>n==null?'':'£'+Number(n).toFixed(2);
+const time=s=>s?new Date(typeof s=='number'?s*1000:s).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+const short=h=>h?String(h).slice(0,10)+'…':'';
+// renderers build DOM nodes (never HTML strings): shop names, baskets and agent text are untrusted
+const pill=p=>{const v=p.value;if(v==null||v==='')return '';const s=document.createElement('span');s.className='pill '+String(v).replace(/[^A-Za-z_]/g,'');s.textContent=String(v).toLowerCase();return s};
+const evLink=p=>{if(!p.value)return '';const a=document.createElement('a');a.href='/evidence/'+encodeURIComponent(p.value);a.target='_blank';a.textContent=p.value;return a};
+const theme=agGrid.themeQuartz?agGrid.themeQuartz.withParams({accentColor:'#2357F5',fontFamily:'inherit',headerFontWeight:600,borderRadius:10,wrapperBorderRadius:14}):undefined;
+const base={defaultColDef:{sortable:true,filter:true,resizable:true},animateRows:true,pagination:true,paginationAutoPageSize:true,getRowId:p=>p.data._id,theme};
+const make=(id,cols,extra={})=>agGrid.createGrid($(id),{...base,columnDefs:cols,rowData:[],...extra});
+
+const txGrid=make('txGrid',[
+ {field:'time',headerName:'When',valueFormatter:p=>time(p.value),sort:'desc',width:150,filter:false},
+ {field:'merchant',headerName:'Shop',width:170},
+ {field:'code_hint',headerName:'Code',valueFormatter:p=>'SP-…'+p.value,width:110},
+ {field:'amount',headerName:'Amount',valueFormatter:p=>p.data.rail=='pyusd'?Number(p.value).toFixed(2)+' PYUSD':gbp(p.value),type:'rightAligned',width:120,filter:'agNumberColumnFilter'},
+ {field:'rail',headerName:'Rail',width:95},
+ {field:'result',headerName:'Result',cellRenderer:pill,width:120},
+ {field:'detail',headerName:'Detail',flex:1,minWidth:240,tooltipField:'detail'},
+ {field:'evidence_id',headerName:'Evidence',cellRenderer:evLink,width:140}]);
+const codeGrid=make('codeGrid',[
+ {field:'label',headerName:'Code',valueFormatter:p=>`${p.value} (SP-…${p.data.hint})`,minWidth:200,flex:1},
+ {field:'issued_to',headerName:'Used by',valueFormatter:p=>p.value=='ai_agent'?'AI agent':'Person',width:110},
+ {field:'status',headerName:'Status',cellRenderer:pill,width:115},
+ {field:'cap',headerName:'Cap',valueFormatter:p=>gbp(p.value),type:'rightAligned',width:95},
+ {field:'spent',headerName:'Spent',valueFormatter:p=>gbp(p.value),type:'rightAligned',width:95},
+ {field:'reserved',headerName:'On hold',valueFormatter:p=>gbp(p.value),type:'rightAligned',width:100},
+ {field:'remaining',headerName:'Left',valueFormatter:p=>gbp(p.value),type:'rightAligned',width:95},
+ {field:'merchant_name',headerName:'Only at',valueFormatter:p=>p.value||'Any shop',width:170},
+ {field:'intent',headerName:'Intent (checked by AI)',flex:1,minWidth:200,tooltipField:'intent'},
+ {field:'approve_over',headerName:'Ask above',valueFormatter:p=>p.value==null?'':gbp(p.value),width:110}],{pagination:false});
+const heldGrid=make('heldGrid',[
+ {field:'created',headerName:'Since',valueFormatter:p=>time(p.value),width:150},
+ {field:'merchant',headerName:'Shop',width:170},
+ {field:'amount',headerName:'Amount',valueFormatter:p=>gbp(p.value),type:'rightAligned',width:110},
+ {field:'channel',headerName:'By',valueFormatter:p=>p.value=='agent'?'AI agent':'Person',width:100},
+ {field:'reason',headerName:'Why it is waiting',flex:1,minWidth:260,tooltipField:'reason'},
+ {field:'evidence_id',headerName:'Evidence',cellRenderer:evLink,width:140}],{pagination:false});
+const evGrid=make('evGrid',[
+ {field:'seq',headerName:'#',width:70,sort:'desc',filter:'agNumberColumnFilter'},
+ {field:'recorded_at',headerName:'Recorded',valueFormatter:p=>time(p.value),width:150,filter:false},
+ {field:'type',headerName:'Type',width:180},
+ {field:'decision',headerName:'Decision',cellRenderer:pill,width:120},
+ {field:'code_hint',headerName:'Code',valueFormatter:p=>p.value?'SP-…'+p.value:'',width:105},
+ {field:'reason',headerName:'Reason / detail',flex:1,minWidth:220,tooltipField:'reason'},
+ {field:'hash',headerName:'Hash',valueFormatter:p=>short(p.value),width:120,tooltipField:'hash'},
+ {field:'prev_hash',headerName:'Previous',valueFormatter:p=>short(p.value),width:120,tooltipField:'prev_hash'},
+ {field:'signed',headerName:'Signed',cellDataType:false,valueFormatter:p=>p.value?'✓ Ed25519':'—',width:105},
+ {field:'id',headerName:'Record',cellRenderer:evLink,width:140}]);
+
+let filter='ALL';
+const FILTERS=['ALL','APPROVED','DECLINED','HELD','REFUNDED'];
+$('filters').innerHTML=FILTERS.map(f=>`<button class="small${f==filter?' on':''}" data-f="${f}">${f=='ALL'?'All':f.charAt(0)+f.slice(1).toLowerCase()}</button>`).join('');
+document.querySelectorAll('#filters button').forEach(b=>b.onclick=()=>{filter=b.dataset.f;document.querySelectorAll('#filters button').forEach(x=>x.classList.toggle('on',x===b));txGrid.onFilterChanged()});
+txGrid.setGridOption('isExternalFilterPresent',()=>filter!='ALL');
+txGrid.setGridOption('doesExternalFilterPass',n=>n.data.result==filter);
+
+function kpi(label,value,cls=''){const d=document.createElement('div');d.className='kpi '+cls;const s=document.createElement('small');s.textContent=label;const b=document.createElement('b');b.textContent=value;d.append(s,b);return d}
+async function load(){
+  try{
+    const [s,ev]=await Promise.all([fetch('/api/state').then(r=>r.json()),fetch('/api/evidence').then(r=>r.json())]);
+    const tx=s.transactions.map((t,i)=>({...t,_id:`${t.evidence_id}-${t.time}-${i}`}));
+    txGrid.setGridOption('rowData',tx);
+    codeGrid.setGridOption('rowData',s.codes.map(c=>({...c,_id:c.hint+'-'+c.created})));
+    const held=[...s.held.map(h=>({...h,_id:h.evidence_id})),...s.pending.map(p=>({...p,merchant:p.merchant_id,channel:'',reason:'PayPal did not confirm: waiting for Check with PayPal',_id:p.evidence_id}))];
+    $('heldsec').hidden=!held.length;heldGrid.setGridOption('rowData',held);
+    evGrid.setGridOption('rowData',ev.records.map(r=>({...r,_id:r.id,code_hint:(r.code||{}).hint,signed:!!r.sig,
+      reason:r.reason||r.consent||r.label||r.summary||r.task||(r.rules?`cap £${r.rules.cap}`:'')})));
+    const approved=s.transactions.filter(t=>t.result=='APPROVED');
+    const k=$('kpis');k.replaceChildren(
+      kpi('Active codes',s.codes.filter(c=>c.status=='active').length),
+      kpi('Paid through PayPal',gbp(approved.filter(t=>t.rail!='pyusd').reduce((a,t)=>a+t.amount,0)),'ok'),
+      kpi('Declined',s.transactions.filter(t=>t.result=='DECLINED').length,'bad'),
+      kpi('Waiting for you',held.length,held.length?'warn':''),
+      kpi('Paid by AI agents',ev.records.filter(r=>r.type=='payment_attempt'&&(r.request||{}).channel=='agent'&&r.decision=='APPROVED').length),
+      kpi('Evidence records',`${ev.chain.records}${ev.chain.signed!=null?' · '+ev.chain.signed+' signed':''}`));
+    const c=ev.chain,el=document.createElement('span');el.className='trail '+(c.valid?'ok':'bad');
+    el.textContent=c.valid?`🔒 Evidence trail intact, ${c.records} records`:`⚠ Evidence trail broken at ${c.broken_at} (${c.problem||'hash chain'})`;$('chain').replaceChildren(el);
+    $('err').innerHTML='';
+  }catch(e){$('err').innerHTML='<div class="notice bad">Could not reach the ScopePay server. Retrying…</div>'}
+}
+load();setInterval(load,5000);
+</script></body></html>
