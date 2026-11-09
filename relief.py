@@ -12,9 +12,9 @@ Who does what
     donations are allocated to codes oldest first, and each purchase records whose money paid for it.
 
 Privacy
-  Evidence records and the public view never carry a claimant's name, phone number or photo. Donors see a first name
-  and a short story only when the claimant ticked "show my first name and story to donors"; otherwise they see
-  "A household in <village>". A donor's name is shown only if the donor chose to show it.
+  Evidence records and the public view never carry a name, phone number or photo. Households appear as "A household in
+  <village>"; their story is shown only if they ticked "donors may read what I wrote". Donors appear as "A donor in
+  <city>".
 """
 import hashlib
 import os
@@ -36,33 +36,33 @@ CATEGORIES = {
 
 # Local shops that take relief codes. Each is paid into its own sandbox account (Payouts) in paypal mode.
 MERCHANTS = {
-    "hanout-asni": {"name": "Hanout Asni", "kind": "Grocery", "place": "asni", "lat": 31.2472, "lon": -7.9801,
-                    "payee_env": "RELIEF_HANOUT_PAYEE_EMAIL"},
-    "pharmacie-amizmiz": {"name": "Pharmacie Amizmiz", "kind": "Pharmacy", "place": "amizmiz", "lat": 31.2153,
-                          "lon": -8.2381, "payee_env": "RELIEF_PHARMACIE_PAYEE_EMAIL"},
-    "materiaux-ouirgane": {"name": "Matériaux Ouirgane", "kind": "Shelter supplies", "place": "ouirgane", "lat": 31.1722,
-                           "lon": -8.0731, "payee_env": "RELIEF_MATERIAUX_PAYEE_EMAIL"},
-    "souk-talat": {"name": "Souk Talat N'Yaaqoub", "kind": "Market", "place": "talat-nyaaqoub", "lat": 30.9938,
-                   "lon": -8.1797, "payee_env": "RELIEF_SOUK_PAYEE_EMAIL"},
+    "asni-grocery": {"name": "Asni Grocery", "kind": "Grocery", "place": "asni", "lat": 31.2472, "lon": -7.9801,
+                     "payee_env": "RELIEF_GROCERY_PAYEE_EMAIL"},
+    "amizmiz-pharmacy": {"name": "Amizmiz Pharmacy", "kind": "Pharmacy", "place": "amizmiz", "lat": 31.2153,
+                         "lon": -8.2381, "payee_env": "RELIEF_PHARMACY_PAYEE_EMAIL"},
+    "ouirgane-supplies": {"name": "Ouirgane Building Supplies", "kind": "Shelter supplies", "place": "ouirgane",
+                          "lat": 31.1722, "lon": -8.0731, "payee_env": "RELIEF_SUPPLIES_PAYEE_EMAIL"},
+    "talat-market": {"name": "Talat N'Yaaqoub Market", "kind": "Market", "place": "talat-nyaaqoub", "lat": 30.9938,
+                     "lon": -8.1797, "payee_env": "RELIEF_MARKET_PAYEE_EMAIL"},
 }
 
 # Server-side prices (GBP) and a category per product. The till sends product ids; prices come from here.
 CATALOG = {
-    "hanout-asni": [
+    "asni-grocery": [
         ("flour-5kg", "Flour 5kg", 3.80, "food"), ("water-6x1-5l", "Water 6 x 1.5L", 2.40, "food"),
         ("lentils-1kg", "Lentils 1kg", 1.60, "food"), ("oil-1l", "Cooking oil 1L", 2.10, "food"),
         ("tea-sugar", "Tea and sugar", 2.50, "food"), ("soap-4", "Soap (4 bars)", 1.40, "hygiene"),
         ("cigarettes", "Cigarettes (20)", 3.20, None), ("phone-credit", "Phone credit £10", 10.00, None)],
-    "pharmacie-amizmiz": [
+    "amizmiz-pharmacy": [
         ("first-aid-kit", "First aid kit", 7.50, "medicine"), ("paracetamol", "Paracetamol", 0.90, "medicine"),
         ("bandages", "Bandages", 2.20, "medicine"), ("nappies-40", "Nappies (40)", 6.80, "baby"),
         ("baby-formula", "Baby formula 800g", 9.50, "baby"), ("sanitary-pads", "Sanitary pads", 2.30, "hygiene"),
         ("perfume", "Perfume 50ml", 18.00, None)],
-    "materiaux-ouirgane": [
+    "ouirgane-supplies": [
         ("tarpaulin", "Tarpaulin 4x6m", 12.00, "shelter"), ("blanket", "Wool blanket", 8.50, "shelter"),
         ("tent-family", "Family tent", 65.00, "shelter"), ("rope-20m", "Rope 20m", 3.50, "shelter"),
         ("gas-stove", "Camping gas stove", 14.00, "shelter"), ("power-drill", "Power drill", 45.00, None)],
-    "souk-talat": [
+    "talat-market": [
         ("vegetables", "Vegetables (bag)", 2.80, "food"), ("bread-10", "Bread (10)", 1.50, "food"),
         ("dates-1kg", "Dates 1kg", 3.20, "food"), ("winter-coat", "Winter coat", 16.00, "shelter"),
         ("mattress", "Foam mattress", 22.00, "shelter"), ("jewellery", "Silver bracelet", 30.00, None)],
@@ -76,7 +76,7 @@ DEFAULT_POLICY = {
               "No alcohol, tobacco, phone credit, jewellery, perfume, power tools or gift cards.",
 }
 
-PUBLIC_FIELDS_NOTE = "Names and stories appear only with the person's consent. Phone numbers and photos are never shown."
+PUBLIC_FIELDS_NOTE = "No one is named. A household's story appears only with their consent; phone numbers and photos are never shown."
 
 
 # ---------- store ----------
@@ -256,7 +256,7 @@ def _complete_donation(did, settlement):
         don["status"], don["settlement"] = "completed", settlement
         ev = _evidence(d, {"type": "donation_received", "pot": don["pot"], "donation": did, "amount": don["amount"],
                            "currency": CURRENCY, "from": {"city": don["city"], "country": don["country"]},
-                           "donor_public_name": don["donor_name"] if don["show_name"] else None, "settlement": settlement})
+                           "settlement": settlement})
         don["evidence_id"] = ev["id"]
     return {"donation_id": did, "status": "completed", "evidence_id": ev["id"]}
 
@@ -817,6 +817,11 @@ def _jitter(seed, lat, lon, km=2.6):
     return round(lat + dy * km / 111, 5), round(lon + dx * km / 95, 5)
 
 
+def _public_id(claim_id):
+    """A household's id on public pages: stable, but reveals nothing about its relief code."""
+    return "H-" + hashlib.sha256(f"public|{claim_id}".encode()).hexdigest()[:8].upper()
+
+
 def public_view(pot_id):
     """What anyone may see: totals, donors (named only by choice), households (named only by consent), shops, flows."""
     with pc._tx() as d:
@@ -840,13 +845,12 @@ def public_view(pot_id):
             by_cat = {}
             for p in mine:
                 for it in p["items"]:
-                    price = next((q[2] for q in CATALOG[p["merchant_id"]] if q[1] == it["name"]), 0)
+                    price = next((q[2] for q in CATALOG.get(p["merchant_id"], []) if q[1] == it["name"]), 0)
                     by_cat[it["category"]] = _money(by_cat.get(it["category"], 0) + price * it["qty"])
             for k, v in by_cat.items():
                 cat_spend[k] = _money(cat_spend.get(k, 0) + v)
-            pid = "H-" + rc["hint"]
-            people.append({"id": pid, "label": c["first_name"] if c["consent_public"] else f"A household in {place['name']}",
-                           "named": c["consent_public"], "place": place["name"], "place_id": c["place"], "lat": lat, "lon": lon,
+            pid = _public_id(c["id"])
+            people.append({"id": pid, "label": f"A household in {place['name']}", "shares_story": c["consent_public"], "place": place["name"], "place_id": c["place"], "lat": lat, "lon": lon,
                            "household": c["household"], "story": c["story"][:280] if c["consent_public"] else None,
                            "received": rc["cap"], "spent": rc["spent"], "returned": rc.get("returned", 0.0),
                            "status": _code_status(rc), "issued_by": "Claude, within the office's policy"
@@ -860,7 +864,7 @@ def public_view(pot_id):
             for p in mine:
                 key = (pid, p["merchant_id"])
                 flows_out[key] = _money(flows_out.get(key, 0) + p["amount"])
-        donors = [{"id": x["id"], "label": x["donor_name"] if x["show_name"] else "Anonymous donor", "city": x["city"],
+        donors = [{"id": x["id"], "label": f"A donor in {x['city']}", "city": x["city"],
                    "country": x["country"], "lat": x["lat"], "lon": x["lon"], "amount": x["amount"], "time": x["created"],
                    "message": x["message"], "allocated": x["allocated"], "spent": x["spent"]} for x in dons]
         shop_tot = {}
@@ -870,7 +874,7 @@ def public_view(pot_id):
         shops = [{**m, "received": shop_tot.get(m["id"], 0.0)} for m in merchants()]
         timeline = sorted(
             [{"t": x["time"], "kind": "donation", "id": x["id"], "amount": x["amount"],
-              "text": f"{x['label']} in {x['city']} gave £{x['amount']:.2f}"} for x in donors]
+              "text": f"{x['label']} gave £{x['amount']:.2f}"} for x in donors]
             + [{"t": p["issued_at"], "kind": "code", "id": p["id"], "amount": p["received"],
                 "text": f"{p['label']} received a £{p['received']:.2f} relief code"} for p in people]
             + [{"t": q["time"], "kind": "purchase", "id": q["evidence_id"], "person": p["id"], "amount": q["amount"],
@@ -917,7 +921,7 @@ def donation_receipt(did):
                     continue
                 c = r["claims"][rc["claim"]]
                 place = pot["places"][c["place"]]["name"]
-                helped.append({"person": "H-" + rc["hint"], "label": c["first_name"] if c["consent_public"] else f"A household in {place}",
+                helped.append({"person": _public_id(c["id"]), "label": f"A household in {place}",
                                "place": place, "household": c["household"], "amount": f["amount"], "spent": f["spent"],
                                "returned": f.get("returned", 0.0)})
         shops = {}

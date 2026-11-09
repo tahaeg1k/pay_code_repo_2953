@@ -1,5 +1,10 @@
 """ScopePay demo server.  Run:  uvicorn app:app --reload   then open http://localhost:8000"""
+import hmac
 import json
+import os
+import threading
+import time
+import uuid
 from typing import List, Optional
 
 from fastapi import FastAPI, Header, Request
@@ -17,8 +22,14 @@ import paycodes as pc
 import relief
 import relief_demo
 
-app = FastAPI(title="ScopePay")
+API_DESCRIPTION = """Disposable, rule-bound payment codes backed by the user's PayPal (sandbox).
+A code carries a spending cap, expiry, optional shop lock and an optional plain-English intent checked by Claude.
+People pay with a code at a shop's Fast Pay button; AI agents pay through `/api/agent/checkout`, where the shop
+sets the prices. Every attempt, approved or declined, is written to a hash-chained, signed evidence trail."""
+app = FastAPI(title="ScopePay API", version="0.3.0", description=API_DESCRIPTION)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+pc.seed_demo_wallet()  # hosted demo: restore the sandbox wallet from DEMO_VAULT_ID (no-op locally)
+relief_demo.seed_if_empty()  # hosted demo: load the relief demo pot when RELIEF_DEMO_SEED is set (no-op locally)
 
 
 @app.middleware("http")
@@ -66,6 +77,18 @@ def wallet_page():
 @app.get("/store")
 def store_page():
     return FileResponse("static/store.html")
+
+
+@app.get("/dashboard")
+def dashboard_page():
+    return FileResponse("static/dashboard.html")
+
+
+@app.get("/healthz")
+def healthz():
+    """Render health check: the store is readable and the evidence chain is intact."""
+    chain = pc.verify_evidence()
+    return {"ok": True, "records": chain["records"], "chain_valid": chain["valid"]}
 
 
 @app.get("/evidence/{eid}")
@@ -273,10 +296,84 @@ async def paypal_webhook(request: Request):
     return await run_in_threadpool(pc.handle_paypal_event, event)
 
 
+# ---------- automations (Zapier "Webhooks by Zapier" or any HTTP caller) ----------
+# A Zap can start the shopping agent, e.g. "new row in the shopping-list sheet -> buy it". The Zap must hold a code
+# that the wallet owner issued to their AI agent: automations can spend within a code, never create one.
+_RUNS = {}
+_RUNS_LOCK = threading.Lock()
+
+
+class AutomationRun(BaseModel):
+    task: str
+    code: str
+    source: str = "zapier"
+    wait: bool = False  # true: answer when the agent is done (may take a minute); false: answer at once with a run id
+
+
+def _automation_auth(token):
+    expected = os.getenv("AUTOMATION_TOKEN", "")
+    if not expected:
+        return JSONResponse({"error": "Automations are off: set AUTOMATION_TOKEN on the server."}, status_code=503)
+    if not token or not hmac.compare_digest(token, expected):
+        return JSONResponse({"error": "Missing or wrong X-ScopePay-Token header."}, status_code=401)
+    return None
+
+
+def _run_automation(run_id, b, base):
+    client = agent_tools.ScopePayClient(base=base, agent_name=f"Claude agent via {b.source}")
+    try:
+        out = agent.run(b.task, b.code, client=client, log=lambda *_: None)
+        pays = [s["output"] for s in out["steps"] if s.get("kind") == "tool" and s.get("name") == "pay_with_code"]
+        last = pays[-1] if pays else {}
+        result = {"status": "done", "summary": out["final"], "outcome": "approved" if last.get("approved") else
+                  "held" if last.get("held") else "declined" if pays else "no_payment",
+                  "amount": last.get("amount"), "evidence_id": last.get("evidence_id"), "steps": out["steps"]}
+    except Exception as e:  # noqa: BLE001
+        result = {"status": "error", "error": str(e)}
+    with _RUNS_LOCK:
+        _RUNS[run_id].update(result, finished=time.time())
+
+
+@app.post("/api/automations/agent-run", tags=["automations"])
+def automation_agent_run(b: AutomationRun, request: Request, x_scopepay_token: Optional[str] = Header(None)):
+    """Start the Claude shopping agent from Zapier (Webhooks by Zapier -> POST, header X-ScopePay-Token)."""
+    denied = _automation_auth(x_scopepay_token)
+    if denied:
+        return denied
+    if not ai.available():
+        return JSONResponse({"error": "No AI key on the server (OPENROUTER_API_KEY or ANTHROPIC_API_KEY)."}, status_code=503)
+    issued = pc.code_issued_to(b.code)
+    if issued is None:
+        return JSONResponse({"error": "Unknown code."}, status_code=404)
+    if issued != "ai_agent":
+        return JSONResponse({"error": "This code was not issued to an AI agent. Issue one in the wallet with "
+                                      "'Who will use it?' set to 'My AI agent'."}, status_code=403)
+    run_id = "RUN-" + uuid.uuid4().hex[:8].upper()
+    trigger = pc.record_event("automation_triggered", source=b.source[:40], task=b.task[:500], run_id=run_id,
+                              code={"hint": b.code.strip().upper()[-4:]})
+    with _RUNS_LOCK:
+        _RUNS[run_id] = {"run_id": run_id, "status": "running", "source": b.source, "task": b.task,
+                         "started": time.time(), "trigger_evidence_id": trigger}
+    base = str(request.base_url).rstrip("/")
+    if b.wait:
+        _run_automation(run_id, b, base)
+    else:
+        threading.Thread(target=_run_automation, args=(run_id, b, base), daemon=True).start()
+    with _RUNS_LOCK:
+        return {**_RUNS[run_id], "status_url": f"{base}/api/automations/runs/{run_id}"}
+
+
+@app.get("/api/automations/runs/{run_id}", tags=["automations"])
+def automation_run_status(run_id: str, x_scopepay_token: Optional[str] = Header(None)):
+    denied = _automation_auth(x_scopepay_token)
+    if denied:
+        return denied
+    with _RUNS_LOCK:
+        run = _RUNS.get(run_id)
+    return run if run else JSONResponse({"error": "unknown run"}, status_code=404)
+
+
 # ---------- ScopePay Relief: donor pots, relief codes, AI-reviewed claims, money map ----------
-import os  # noqa: E402
-
-
 def _office(key):
     """Office endpoints need X-Office-Key when RELIEF_OFFICE_KEY is set (unset = open, for the local demo)."""
     want = os.getenv("RELIEF_OFFICE_KEY")
@@ -460,3 +557,17 @@ def relief_redeem(b: ReliefRedeem):
 def relief_seed(x_office_key: Optional[str] = Header(None)):
     _office(x_office_key)
     return {"pot_id": relief_demo.seed()}
+
+
+# ---------- OpenAPI (for APIMatic and other SDK generators) ----------
+# Only the JSON API goes in the spec; the HTML pages and redirects are left out.
+_TAGS = [("/api/codes", "codes"), ("/api/redeem", "payments"), ("/api/agent", "agents"), ("/api/catalog", "agents"),
+         ("/api/held", "approvals"), ("/api/reconcile", "approvals"), ("/api/evidence", "evidence"),
+         ("/api/escrow", "escrow"), ("/api/relief", "relief"), ("/webhooks", "webhooks"), ("/api/automations", "automations")]
+for _r in app.routes:
+    _path = getattr(_r, "path", "")
+    if hasattr(_r, "include_in_schema"):
+        if not (_path.startswith("/api/") or _path.startswith("/webhooks/") or _path == "/healthz"):
+            _r.include_in_schema = False
+        elif not getattr(_r, "tags", None):
+            _r.tags = [next((t for p, t in _TAGS if _path.startswith(p)), "wallet")]

@@ -138,7 +138,7 @@ class ReliefTest(unittest.TestCase):
     # ---------- spending ----------
     def test_shop_payment_and_attribution(self):
         code = self.claim()["code"]
-        r = relief.redeem(code, "hanout-asni", [{"product_id": "flour-5kg", "qty": 2}, {"product_id": "soap-4", "qty": 1}])
+        r = relief.redeem(code, "asni-grocery", [{"product_id": "flour-5kg", "qty": 2}, {"product_id": "soap-4", "qty": 1}])
         self.assertTrue(r["approved"])
         self.assertEqual(r["amount"], 9.0)
         rec = pc.get_evidence(r["evidence_id"])["record"]
@@ -148,24 +148,24 @@ class ReliefTest(unittest.TestCase):
 
     def test_goods_not_covered_are_refused(self):
         code = self.claim()["code"]
-        r = relief.redeem(code, "hanout-asni", [{"product_id": "cigarettes", "qty": 1}, {"product_id": "flour-5kg", "qty": 1}])
+        r = relief.redeem(code, "asni-grocery", [{"product_id": "cigarettes", "qty": 1}, {"product_id": "flour-5kg", "qty": 1}])
         self.assertFalse(r["approved"])
         self.assertIn("goods_covered", r["reason"])
         relief.set_policy(self.pot, {"categories": ["food"]})
         code2 = self.claim(name="Food Only", phone="+212 600 000 040")["code"]
-        self.assertFalse(relief.redeem(code2, "materiaux-ouirgane", [{"product_id": "blanket", "qty": 1}])["approved"])
+        self.assertFalse(relief.redeem(code2, "ouirgane-supplies", [{"product_id": "blanket", "qty": 1}])["approved"])
 
     def test_balance_and_unknown_items(self):
         code = self.claim(size=1)["code"]   # 55
-        self.assertFalse(relief.redeem(code, "materiaux-ouirgane", [{"product_id": "tent-family", "qty": 1}])["approved"])
-        self.assertFalse(relief.redeem(code, "hanout-asni", [{"product_id": "gold-bar", "qty": 1}])["approved"])
-        self.assertFalse(relief.redeem("RC-0000-0000-0000", "hanout-asni", [{"product_id": "flour-5kg", "qty": 1}])["approved"])
+        self.assertFalse(relief.redeem(code, "ouirgane-supplies", [{"product_id": "tent-family", "qty": 1}])["approved"])
+        self.assertFalse(relief.redeem(code, "asni-grocery", [{"product_id": "gold-bar", "qty": 1}])["approved"])
+        self.assertFalse(relief.redeem("RC-0000-0000-0000", "asni-grocery", [{"product_id": "flour-5kg", "qty": 1}])["approved"])
 
     def test_ai_intent_check_can_hold_and_office_decides(self):
         code = self.claim()["code"]
         hold = {"verdict": "hold", "summary": "unsure", "items": [], "model": "t", "prompt_sha256": None}
         with mock.patch.object(ai, "available", return_value=True), mock.patch.object(ai, "audit_basket", return_value=hold):
-            r = relief.redeem(code, "hanout-asni", [{"product_id": "tea-sugar", "qty": 4}])
+            r = relief.redeem(code, "asni-grocery", [{"product_id": "tea-sugar", "qty": 4}])
         self.assertTrue(r["held"])
         self.assertEqual(relief.code_info(code)["remaining"], 75.0)   # reserved while held
         self.assertTrue(relief.decide_held(r["evidence_id"], "approve")["approved"])
@@ -173,31 +173,38 @@ class ReliefTest(unittest.TestCase):
 
     def test_expired_and_revoked_codes_return_money(self):
         v = self.claim()
-        relief.redeem(v["code"], "hanout-asni", [{"product_id": "flour-5kg", "qty": 1}])
+        relief.redeem(v["code"], "asni-grocery", [{"product_id": "flour-5kg", "qty": 1}])
         with pc._tx() as d:
             for rc in relief._r(d)["codes"].values():
                 rc["expires"] = time.time() - 1
         relief.sweep()
         b = relief.list_pots()[0]
         self.assertEqual((b["returned"], b["available"], b["spent"]), (81.2, 396.2, 3.8))
-        self.assertFalse(relief.redeem(v["code"], "hanout-asni", [{"product_id": "flour-5kg", "qty": 1}])["approved"])
+        self.assertFalse(relief.redeem(v["code"], "asni-grocery", [{"product_id": "flour-5kg", "qty": 1}])["approved"])
         code2 = self.claim(name="Rev", phone="+212 600 000 050")["code"]
         self.assertEqual(relief.revoke_code(self.pot, code2[-4:])["returned"], 85.0)
 
     # ---------- privacy ----------
-    def test_public_view_and_evidence_carry_no_private_data(self):
-        self.claim(name="Fatima Ait Ali", consent_public=True, photo="data:image/jpeg;base64,QUJD")
-        self.claim(name="Hidden Person", phone="+212 600 000 060", place="amizmiz")
+    def test_public_view_and_evidence_carry_no_names(self):
+        self.claim(name="Shared Story", consent_public=True, photo="data:image/jpeg;base64,QUJD")
+        self.claim(name="Private Story", phone="+212 600 000 060", place="amizmiz", story=STORY + " Kept private.")
         pub = json.dumps(relief.public_view(self.pot))
         ev = json.dumps(pc.evidence_list())
         for blob in (pub, ev):
-            self.assertNotIn("Hidden", blob)
-            self.assertNotIn("Ait Ali", blob)        # only the first name, and only with consent
+            self.assertNotIn("Shared", blob)          # no names, even with consent
+            self.assertNotIn("Private", blob)
+            self.assertNotIn("Ana", blob)             # donor names are never shown
             self.assertNotIn("600 000", blob)
-            self.assertNotIn("QUJD", blob)           # photo
-        self.assertIn("Fatima", pub)
-        self.assertIn("A household in Amizmiz", pub)
-        self.assertNotIn("Fatima", ev)
+            self.assertNotIn("QUJD", blob)            # photo
+        self.assertIn("A household in Asni", pub)
+        self.assertIn("A donor in Paris", pub)
+        self.assertIn("sleeping outside", pub)        # the consenting household's story is shared
+        self.assertNotIn("Kept private", pub)         # the other one's is not
+        with pc._LOCK:
+            hints = [rc["hint"] for rc in relief._r(pc._db())["codes"].values()]
+        people = relief.public_view(self.pot)["people"]
+        for h in hints:                               # no part of a relief code is public
+            self.assertFalse(any(h in p["id"] or h in p["label"] for p in people))
 
     def test_receipt_follows_the_money(self):
         dons = relief.public_view(self.pot)["donors"]
@@ -215,6 +222,72 @@ class ReliefTest(unittest.TestCase):
         self.assertAlmostEqual(t["raised"], t["available"] + t["outstanding"] + t["spent"], places=2)
         self.assertAlmostEqual(sum(f["amount"] for f in v["flows"]["out"]), t["spent"], places=2)
         self.assertTrue(v["chain"]["valid"])
+
+
+    def test_startup_seed_only_when_asked_and_empty(self):
+        relief.reset()
+        with mock.patch.dict("os.environ", {"RELIEF_DEMO_SEED": ""}):
+            self.assertIsNone(relief_demo.seed_if_empty())
+        with mock.patch.dict("os.environ", {"RELIEF_DEMO_SEED": "1"}):
+            pid = relief_demo.seed_if_empty()
+            self.assertTrue(pid)
+            self.assertIsNone(relief_demo.seed_if_empty())   # a restart with data keeps it
+        self.assertEqual(len(relief.list_pots()), 1)
+
+
+
+try:
+    from fastapi.testclient import TestClient  # needs fastapi + httpx (CI, the Mac)
+    import app as app_module
+    HAVE_APP = True
+except Exception:  # noqa: BLE001
+    HAVE_APP = False
+
+
+@unittest.skipUnless(HAVE_APP, "fastapi/httpx not installed")
+class ReliefEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.patches = [mock.patch.object(pc, "DB", Path(self.tmp.name) / "db.json"),
+                        mock.patch.object(relief, "MODE", "simulated"),
+                        mock.patch.object(ai, "available", return_value=False),
+                        mock.patch.dict("os.environ", {"RELIEF_OFFICE_KEY": ""})]
+        for p in self.patches:
+            p.start()
+        self.c = TestClient(app_module.app)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        self.tmp.cleanup()
+
+    def test_full_flow_over_http(self):
+        for page in ("/relief", "/relief/office", "/relief/claim", "/relief/shop"):
+            self.assertEqual(self.c.get(page).status_code, 200, page)
+        pot = self.c.post("/api/relief/demo/seed").json()["pot_id"]
+        self.assertEqual(self.c.post(f"/api/relief/pots/{pot}/donate", json={"amount": 25, "city": "london"}).json()["status"], "completed")
+        claim = self.c.post(f"/api/relief/pots/{pot}/claims", json={"name": "Case", "phone": "+212 611 000 999", "place": "asni",
+                                                                    "household": 2, "story": STORY}).json()
+        self.assertEqual(claim["status"], "referred")   # no AI key: a person decides
+        issued = self.c.post(f"/api/relief/claims/{claim['claim_id']}/decide", json={"action": "approve"}).json()
+        paid = self.c.post("/api/relief/redeem", json={"code": issued["code"], "merchant_id": "asni-grocery",
+                                                       "items": [{"product_id": "flour-5kg", "qty": 1}]}).json()
+        self.assertTrue(paid["approved"])
+        self.assertTrue(self.c.get("/healthz").json()["chain_valid"])
+        self.assertEqual(self.c.get(f"/api/relief/pots/{pot}").json()["pot"]["id"], pot)
+
+    def test_office_key(self):
+        with mock.patch.dict("os.environ", {"RELIEF_OFFICE_KEY": "k"}):
+            self.assertEqual(self.c.post("/api/relief/demo/seed").status_code, 403)
+            self.assertEqual(self.c.post("/api/relief/demo/seed", headers={"X-Office-Key": "k"}).status_code, 200)
+
+    def test_openapi_lists_relief_api_not_pages(self):
+        spec = app_module.app.openapi()
+        relief_paths = [p for p in spec["paths"] if p.startswith("/api/relief")]
+        self.assertGreater(len(relief_paths), 10)
+        self.assertNotIn("/relief", spec["paths"])
+        tags = {t for p in relief_paths for op in spec["paths"][p].values() for t in op.get("tags", [])}
+        self.assertEqual(tags, {"relief"})
 
 
 if __name__ == "__main__":

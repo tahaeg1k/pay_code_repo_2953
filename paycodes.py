@@ -251,6 +251,34 @@ def unlink():
         d["wallet"] = {}
 
 
+def seed_demo_wallet():
+    """Hosted demo (e.g. Render, where local files reset on restart): restore a sandbox wallet that was linked
+    earlier, from DEMO_VAULT_ID, so visitors can try ScopePay without their own PayPal sandbox login.
+    The vault id stays valid at PayPal; this only puts it back in the empty local store."""
+    vault = os.getenv("DEMO_VAULT_ID", "").strip()
+    if not vault:
+        return None
+    with _tx() as d:
+        if d["wallet"].get("vault_id"):
+            return d["wallet"]
+        d["wallet"] = {"vault_id": vault, "email": os.getenv("DEMO_PAYER_EMAIL", "sandbox buyer"),
+                       "linked_at": time.time(), "restored_from_env": True}
+        _append_evidence(d, {"type": "wallet_linked", "vault_id": vault, "payer_email": d["wallet"]["email"],
+                             "consent": "Restored from DEMO_VAULT_ID: a sandbox PayPal vault the buyer approved earlier"})
+        return d["wallet"]
+
+
+def code_issued_to(code):
+    c = _db()["codes"].get(_h(code))
+    return c.get("issued_to") if c else None
+
+
+def record_event(event_type, **fields):
+    """Add a non-payment event (e.g. an automation trigger) to the evidence trail."""
+    with _tx() as d:
+        return _append_evidence(d, {"type": event_type, **fields})["id"]
+
+
 # ---------- codes ----------
 def _h(code):
     return hashlib.sha256(code.strip().upper().encode()).hexdigest()

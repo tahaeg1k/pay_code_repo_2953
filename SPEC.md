@@ -104,13 +104,25 @@ YouTube demo under 3 min, no third-party trademarks or music.
   Default HOLD_MODE=app. `tests/test_attacks.py` (23 attack tests); 56 offline tests pass. Existing trail (14 unsigned
   records) still verifies. Not yet run live: HOLD_MODE=authorize against the sandbox.
 - AI provider (Nov 6): ai.py uses OpenRouter's Anthropic-compatible endpoint when OPENROUTER_API_KEY is set (models anthropic/claude-haiku-5.5, anthropic/claude-sonnet-5.5), else Anthropic directly; AI_PROVIDER / AI_*_MODEL override. 34 offline tests pass.
+- Deploy, monitor, automations (Nov 8, from Marcos's plan): `render.yaml` (free web service, uvicorn with proxy headers,
+  /healthz health check, deploys after CI passes), `.github/workflows/ci.yml` (pytest + OpenAPI artifact),
+  `/dashboard` (AG Grid 33 from jsdelivr: attempts with result filters, codes, held/uncertain, evidence trail, KPIs),
+  `seed_demo_wallet()` (DEMO_VAULT_ID restores the sandbox wallet on an empty hosted store), POST
+  /api/automations/agent-run + GET /api/automations/runs/{id} (X-ScopePay-Token = AUTOMATION_TOKEN; only codes issued
+  to ai_agent; background or wait; automation_triggered evidence record), OpenAPI limited to the JSON API with tags
+  (title "ScopePay API" 0.3.0) for APIMatic. Not done on purpose: AI creating its own codes (step 4 as written), remote MCP.
+  Verified live on localhost: dashboard renders real data, /healthz, /openapi.json (25 paths, no pages), 503 without
+  AUTOMATION_TOKEN. Endpoint tests in tests/test_deploy.py run where FastAPI is installed (CI, the Mac).
 - ScopePay Relief (Nov 6, branch relief-pots): `relief.py` + `relief_demo.py` + pages `static/relief*.html`. Named donor pots
   (simulated money by default; RELIEF_PAYMENTS=paypal uses Orders for donations and Payouts for shops), an office console
   (policy, referred claims, direct registration, revoke, held baskets, live activity), a claim page (rules, then Claude
   reviews text + photo; Claude may issue up to the office's auto-issue limit, can lower but never raise amounts, never
   refuses; failures refer), a shop till (server prices, goods categories per item), and a donor dashboard (map: donor
   cities -> pot -> households -> shops, flow diagram, replay, receipts per donation). FIFO allocation of donations to codes,
-  per-purchase attribution, expiry/revoke returns money to the pot. Public view and evidence records carry no names
-  (first name only with consent), phones or photos. Al Haouz demo seed. tests/test_relief.py: 21 tests; 78 offline tests
-  pass. Not yet run live: Claude claim review with a real key, RELIEF_PAYMENTS=paypal against the sandbox.
+  per-purchase attribution, expiry/revoke returns money to the pot. Public view and evidence records carry no names,
+  phones, photos or code digits (households "A household in <village>", donors "A donor in <city>"; a story only with
+  consent). Al Haouz demo seed with case numbers instead of names, generic shop names.
+  Nov 9: merged main (Render, CI, dashboard, automations, OpenAPI) into the branch: relief routes tagged "relief" in
+  OpenAPI, RELIEF_DEMO_SEED loads the demo at startup on Render, relief endpoint tests run in CI. 82 offline tests pass;
+  endpoint tests need FastAPI (CI). Not yet run live: Claude claim review with a real key, RELIEF_PAYMENTS=paypal.
 

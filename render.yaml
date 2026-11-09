@@ -1,0 +1,44 @@
+# Render Blueprint for ScopePay (sandbox demo). Render > New > Blueprint > pick this repo.
+# Free instances sleep when idle and reset local files on restart: the JSON store starts empty each time,
+# and DEMO_VAULT_ID restores the linked sandbox wallet so the demo still works.
+services:
+  - type: web
+    name: scopepay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # proxy headers: Render terminates HTTPS, so PayPal return URLs must come back as https://
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass   # deploy only after the GitHub Actions tests pass
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GREENLEAF_PAYEE_EMAIL
+        sync: false
+      - key: NORTHSIDE_PAYEE_EMAIL
+        sync: false
+      - key: SETTLEMENT
+        value: auto
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: DEMO_VAULT_ID          # vault_id from your local paycodes_db.json after linking PayPal once
+        sync: false
+      - key: DEMO_PAYER_EMAIL
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID       # after creating the webhook for https://<service>.onrender.com/webhooks/paypal
+        sync: false
+      - key: AUTOMATION_TOKEN        # secret header Zapier sends; Render generates it
+        generateValue: true
+      # ScopePay Relief: load the demo pot on each fresh start. The office console is open unless RELIEF_OFFICE_KEY
+      # is set (then visitors need the key to approve claims or reload the demo).
+      - key: RELIEF_DEMO_SEED
+        value: "1"
+      - key: RELIEF_OFFICE_KEY
+        sync: false
+      - key: EVIDENCE_SIGNING_KEY    # Ed25519 key (base64 of 32 bytes) for signing evidence; stable across restarts
+        generateValue: true

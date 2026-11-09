@@ -78,7 +78,7 @@ function claimCard(c) {
   const rv = c.review, open = c.status === 'referred' || c.status === 'declined';
   return `<article class="claim ${c.status}" id="c-${c.id}">
     <div class="chead"><div><b>${R.esc(c.name)}</b> <span class="pill ${c.status === 'issued' ? 'active' : c.status === 'referred' ? 'used' : c.status === 'declined' ? 'DECLINED' : ''}">${STATUS[c.status] || c.status}</span>
-      <div class="meta">${R.esc(c.place_name)} · ${c.household} ${c.household === 1 ? 'person' : 'people'} · ${R.esc(c.phone)} · ${R.ago(c.created)} · ${c.id}${c.registered_by ? ' · registered by ' + R.esc(c.registered_by) : ''}${c.consent_public ? ' · <span title="Agreed to show first name and story to donors">shares story</span>' : ''}</div></div>
+      <div class="meta">${R.esc(c.place_name)} · ${c.household} ${c.household === 1 ? 'person' : 'people'} · ${R.esc(c.phone)} · ${R.ago(c.created)} · ${c.id}${c.registered_by ? ' · registered by ' + R.esc(c.registered_by) : ''}${c.consent_public ? ' · <span title="Agreed to let donors read their story (never their name)">shares story</span>' : ''}</div></div>
       <div style="text-align:right"><b>${R.gbp(c.code ? c.code.cap : (c.recommended_amount ?? c.entitlement ?? 0))}</b><div class="meta">${c.code ? 'code …' + c.code.hint : 'entitlement ' + R.gbp(c.entitlement || 0)}</div></div></div>
     ${c.story || c.needs || c.photo ? `<div class="body ${c.photo ? '' : 'nophoto'}"><div>
       ${c.needs ? `<div class="meta"><b>Needs:</b> ${R.esc(c.needs)}</div>` : ''}
@@ -154,7 +154,7 @@ function drawRegister() {
     <label>Name</label><input id="r-name"><label>Phone</label><input id="r-phone" placeholder="+212 6…">
     <div class="row"><div><label>Village</label><select id="r-place">${O.places.map(p => `<option value="${p.id}">${R.esc(p.name)}</option>`).join('')}</select></div>
       <div><label>People</label><input id="r-size" type="number" min="1" max="25" value="4"></div></div>
-    <label class="check"><input type="checkbox" id="r-consent"> They agree to show their first name to donors</label>
+    <label class="check"><input type="checkbox" id="r-consent"> They agree to let donors read their story (never their name)</label>
     <button class="earth wide" onclick="register(this)">Issue a relief code</button><div id="r-msg"></div>`;
 }
 async function register(btn) {

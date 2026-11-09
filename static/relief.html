@@ -206,8 +206,7 @@ function drawMap() {
     const [x, y] = XY[p.id], r = R_[p.id], c = 2 * Math.PI * (r + 3.5), f = p.received ? p.spent / p.received : 0;
     out.push(`<g data-t="${p.issued_at}" data-sel="${p.id}" style="cursor:pointer" onclick="selectPerson('${p.id}')" onmousemove="tip(event,'<b>${R.esc(p.label)}</b>${R.esc(p.place)} · ${p.household} people<br>${R.gbp0(p.received)} code · ${R.gbp0(p.spent)} spent')" onmouseleave="untip()">
       <circle class="hh-ring" cx="${x}" cy="${y}" r="${r + 3.5}" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 ${x} ${y})"/>
-      <circle class="hh-dot ${p.named ? '' : 'anon'}" cx="${x}" cy="${y}" r="${r}"/>
-      ${p.named ? `<text x="${x}" y="${y + 4}" text-anchor="middle" style="font:700 ${Math.max(9, r * .8)}px var(--display);fill:#fff;pointer-events:none">${R.esc(p.label[0])}</text>` : ''}</g>`);
+      <circle class="hh-dot" cx="${x}" cy="${y}" r="${r}"/></g>`);
   }
   out.push(...labels);
   // money path, bottom left
@@ -322,7 +321,7 @@ function drawHowTo() {
     <div class="key">
       <div><svg width="18" height="18"><circle cx="9" cy="9" r="6" class="donor-dot"/></svg>Donors, by city. Blue lines bring money to the pot.</div>
       <div><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="var(--ink)"/></svg>The pot, held for the relief office.</div>
-      <div><svg width="18" height="18"><circle cx="9" cy="9" r="6" class="hh-dot"/></svg>A household with a relief code (filled: they chose to share their name).</div>
+      <div><svg width="18" height="18"><circle cx="9" cy="9" r="6" class="hh-dot"/></svg>A household with a relief code. No one is named.</div>
       <div><svg width="18" height="18"><rect x="3" y="3" width="12" height="12" rx="3" class="shop"/></svg>A local shop. Green dashes are purchases.</div>
     </div>
     <p class="privacy">Click any dot for the details. ${R.esc(D.privacy)}</p>`;
@@ -332,8 +331,8 @@ function selectPerson(id) {
   selected = {kind: 'person', ids: [id]}; highlight();
   const funders = D.flows.in.filter(f => f.to === id).map(f => ({d: D.donors.find(x => x.id === f.from), v: f.amount})).filter(x => x.d);
   const f = p.received ? p.spent / p.received : 0;
-  $('detail').innerHTML = `<div class="kicker">${p.named ? 'Household' : 'Household (name kept private)'}</div>
-    <h3>${R.esc(p.label)}</h3><div class="where">${R.esc(p.place)} · ${p.household} ${p.household === 1 ? 'person' : 'people'}</div>
+  $('detail').innerHTML = `<div class="kicker">Household</div>
+    <h3>${R.esc(p.label)}</h3><div class="where">${p.household} ${p.household === 1 ? 'person' : 'people'}</div>
     ${p.story ? `<blockquote>“${R.esc(p.story)}”</blockquote>` : ''}
     <div class="gauge earth" style="margin-top:12px"><i style="width:${f * 100}%"></i></div>
     <div class="kv"><span>Relief code</span><b>${R.gbp(p.received)}</b></div>
@@ -342,7 +341,7 @@ function selectPerson(id) {
     <div class="kv"><span>Issued by</span><b style="text-align:right">${R.esc(p.issued_by)}</b></div>
     <div class="chips">${Object.entries(p.spent_by_category).map(([k, v]) => `<span class="chip leaf">${R.esc(D.pot.categories[k] || k)} ${R.gbp0(v)}</span>`).join('')}</div>
     ${p.purchases.length ? `<ul class="buys">${p.purchases.map(q => `<li><div class="top"><span>${R.esc(q.merchant)}</span><span>${R.gbp(q.amount)}</span></div><small>${R.esc(q.items.join(', '))}</small><small>${R.when(q.time)} · <a href="/evidence/${q.evidence_id}" target="_blank">signed record ${q.evidence_id}</a></small></li>`).join('')}</ul>` : '<p class="muted" style="font-size:14px">Nothing bought yet.</p>'}
-    ${funders.length ? `<p style="font-size:13.5px;margin:14px 0 0"><b>Paid for by</b> ${funders.map(x => `${R.esc(x.d.label)} (${R.esc(x.d.city)}) ${R.gbp0(x.v)}`).join(', ')}</p>` : ''}`;
+    ${funders.length ? `<p style="font-size:13.5px;margin:14px 0 0"><b>Paid for by</b> ${funders.map(x => `${R.esc(x.d.label)} ${R.gbp0(x.v)}`).join(', ')}</p>` : ''}`;
 }
 async function selectDonor(id, fromCity) {
   const d = D.donors.find(x => x.id === id); if (!d) return;
@@ -366,7 +365,7 @@ async function selectCity(city) {
   const list = D.donors.filter(d => d.city === city);
   if (list.length === 1) return selectDonor(list[0].id);
   const r = await R.api('/api/relief/donations/' + list[0].id);
-  const others = `<p style="font-size:13.5px;margin:14px 0 4px"><b>All ${list.length} donors in ${R.esc(city)}</b></p><div class="chips">${list.map(d => `<span class="chip sky" style="cursor:pointer" onclick="selectDonor('${d.id}')">${R.esc(d.label)} ${R.gbp0(d.amount)}</span>`).join('')}</div>`;
+  const others = `<p style="font-size:13.5px;margin:14px 0 4px"><b>All ${list.length} donors in ${R.esc(city)}</b></p><div class="chips">${list.map(d => `<span class="chip sky" style="cursor:pointer" onclick="selectDonor('${d.id}')">${R.gbp0(d.amount)} · ${R.when(d.time)}</span>`).join('')}</div>`;
   selected = {kind: 'donor', ids: [list[0].id, ...r.helped.map(h => h.person)]}; highlight();
   $('detail').innerHTML = donorCard(list[0], r, others);
 }
@@ -382,11 +381,11 @@ function selectShop(id) {
 
 // ---------- households, categories ----------
 function drawPeople() {
-  $('people').innerHTML = D.people.length ? [...D.people].sort((a, b) => b.named - a.named || b.issued_at - a.issued_at).map(p => `
+  $('people').innerHTML = D.people.length ? [...D.people].sort((a, b) => b.shares_story - a.shares_story || b.issued_at - a.issued_at).map(p => `
     <div class="person" onclick="selectPerson('${p.id}');document.querySelector('.mapgrid').scrollIntoView({behavior:'smooth'})">
-      <div class="ptop"><div class="avatar ${p.named ? '' : 'anon'}">${p.named ? R.esc(R.initials(p.label)) : '·'}</div>
-        <div><b>${R.esc(p.label)}</b><small>${R.esc(p.place)} · ${p.household} ${p.household === 1 ? 'person' : 'people'}</small></div></div>
-      ${p.story ? `<div class="story">“${R.esc(p.story)}”</div>` : '<div class="story muted">Chose not to share their name or story.</div>'}
+      <div class="ptop"><div class="avatar"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3l7 6.5V17H12v-4.5H8V17H3z" fill="#fff"/></svg></div>
+        <div><b>${R.esc(p.place)}</b><small>${p.household} ${p.household === 1 ? 'person' : 'people'}</small></div></div>
+      ${p.story ? `<div class="story">“${R.esc(p.story)}”</div>` : '<div class="story muted">Chose to keep their story private.</div>'}
       <div class="gauge earth"><i style="width:${p.received ? p.spent / p.received * 100 : 0}%"></i></div>
       <div class="nums"><span>${R.gbp0(p.spent)} spent of ${R.gbp0(p.received)}</span><span>${p.purchases.length} purchase${p.purchases.length === 1 ? '' : 's'}</span></div>
     </div>`).join('') : '<div class="empty-state">No households have codes yet.</div>';
@@ -405,8 +404,6 @@ function drawDonate() {
     <div class="amounts">${[20, 50, 100, 250].map(a => `<button class="${a === amount ? 'on' : ''}" onclick="pick(${a})">£${a}</button>`).join('')}</div>
     <label for="amt">Amount (£)</label><input id="amt" type="number" min="1" step="1" value="${amount}" oninput="amount=+this.value;document.querySelectorAll('.amounts button').forEach(b=>b.classList.toggle('on',b.textContent==='£'+this.value));$('give').textContent='Give £'+(this.value||0)">
     <label for="city">Where are you giving from?</label><select id="city">${cities.map(([k, c]) => `<option value="${k}" ${k === 'london' ? 'selected' : ''}>${R.esc(c.name)}, ${R.esc(c.country)}</option>`).join('')}</select>
-    <label for="dname">Your name (optional)</label><input id="dname" maxlength="80" placeholder="Shown only if you tick the box">
-    <label class="check"><input type="checkbox" id="dshow"> Show my name on the map</label>
     <label for="dmsg">A message for the families (optional)</label><input id="dmsg" maxlength="200">
     <button class="earth wide" id="give" onclick="give(this)">Give £${amount}</button>
     <p class="privacy">${OPT.mode === 'paypal' ? 'You pay with PayPal (sandbox).' : 'Demo mode: no real money moves. Set RELIEF_PAYMENTS=paypal to pay through the PayPal sandbox.'} You get a receipt that shows which households your money reached.</p>
@@ -417,7 +414,7 @@ async function give(btn) {
   btn.disabled = true; btn.textContent = 'Sending…';
   try {
     const r = await R.api(`/api/relief/pots/${POT.id}/donate`, {method: 'POST', body: {amount: +$('amt').value, city: $('city').value,
-      donor_name: $('dname').value, show_name: $('dshow').checked, message: $('dmsg').value}});
+      message: $('dmsg').value}});
     if (r.approve_url) { location.href = r.approve_url; return; }
     const u = new URL(location.href); u.searchParams.set('pot', POT.id); u.searchParams.set('donation', r.donation_id); history.replaceState(null, '', u);
     D = await R.api('/api/relief/pots/' + POT.id); T1 = D.timeline.length ? D.timeline[D.timeline.length - 1].t : T1; tNow = T1;

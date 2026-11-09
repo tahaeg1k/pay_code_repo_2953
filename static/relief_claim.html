@@ -44,7 +44,7 @@ function render(pub) {
     <label>A photo of the damage (optional, it helps)</label>
     <div class="drop" id="drop" onclick="$('file').click()">Tap to add a photo</div>
     <input type="file" id="file" accept="image/*" capture="environment" style="display:none" onchange="readPhoto(this.files[0])">
-    <label class="check"><input type="checkbox" id="consent"> Donors may see my first name and what I wrote (never my phone number or photo)</label>
+    <label class="check"><input type="checkbox" id="consent"> Donors may read what I wrote (never my name, phone number or photo)</label>
     <button class="earth wide" id="send" onclick="send(this)">Send my claim</button>
     <p class="privacy">Your photo and phone number stay with the relief office. ${pub.pot.mode === 'simulated' ? 'This is a demo: no real money is involved.' : ''}</p>
   </section>
