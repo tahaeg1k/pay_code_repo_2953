@@ -14,7 +14,7 @@ evidence hash on every payment.
 
 ## Test
 ```bash
-cd ~/Code/hackathons/paypal/contracts/paycode-escrow
+cd contracts/paycode-escrow   # from the repo root
 forge test -vv
 ```
 

@@ -8,3 +8,7 @@ paycodes_db.json.tmp
 evidence_signing_key.pem
 contracts/paycode-escrow/lib/
 demo/
+.DS_Store
+*.v1.*
+*.v2.*
+SUBMISSION.md

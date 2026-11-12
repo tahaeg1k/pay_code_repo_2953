@@ -1,16 +1,38 @@
-# ScopePay — PayPal AI Hackathon
+# ScopePay
 
-Disposable payment codes backed by your PayPal: spending cap, expiry, single or multi-use.
-Link PayPal once (Vault), generate a code, pay at a merchant with no PayPal popup.
-Give the code to an AI agent instead of your PayPal login: it can only spend within the code's rules.
+**Scoped PayPal payment codes for people and AI agents.** Built for the PayPal AI Hackathon 2026.
 
-**Live demo:** https://scopepay-w7w7.onrender.com (PayPal sandbox, no real money; the first load can take ~50 s while the free instance wakes up)
-- Wallet: https://scopepay-w7w7.onrender.com/wallet
-- Shop: https://scopepay-w7w7.onrender.com/store?m=greenleaf
-- Payment monitor (AG Grid): https://scopepay-w7w7.onrender.com/dashboard
-- API docs: https://scopepay-w7w7.onrender.com/docs
+Link PayPal once, then hand out disposable codes instead of your login. Each code has a spending cap, an expiry, a shop
+and a plain-English purpose. Claude checks every basket against that purpose before PayPal is charged, and every
+decision is saved as a signed evidence record.
 
-**Demo video (2:46):** https://youtu.be/ldKH3bfLjqI
+| | |
+|---|---|
+| **Live demo** | https://scopepay-w7w7.onrender.com/preview (PayPal sandbox, no real money) |
+| **Demo video (2:46)** | https://youtu.be/ldKH3bfLjqI |
+| **Devpost** | https://devpost.com/software/scopepay-2nbqri |
+| **API docs** | https://scopepay-w7w7.onrender.com/docs |
+| **Team** | Mohamed Taha Bennani, Marcos A. Oliva |
+
+> The demo runs on Render's free plan: the first load can take about a minute while the server wakes up.
+
+## Try it in 2 minutes
+Open the [live demo](https://scopepay-w7w7.onrender.com/preview/demo). A sandbox PayPal wallet is already linked.
+1. **Wallet**: create a code with a limit, a shop and a purpose (e.g. "vegetarian groceries, no alcohol").
+2. **Greenleaf Grocer**: pay with the code. Try going over the limit or adding something off-purpose: it is declined or held.
+3. **Wallet → Send your AI agent shopping**: issue a code to "My AI agent" and let Claude shop with it.
+4. **Monitor (AG Grid)**: every attempt, held payment and signed evidence record.
+
+## What's inside
+| | Used for |
+|---|---|
+| **PayPal (sandbox)** | Vault v3, Orders v2 with `vault_id`, Payouts, webhook signature verification, Transaction Search and balances |
+| **Claude via OpenRouter** | Haiku 5.5 checks each basket against the code's purpose; Sonnet 5.5 runs the shopping agent; an MCP server exposes the same tools |
+| **AG Grid** | The payment monitor at `/dashboard` |
+| **Render + GitHub Actions** | Hosting from `render.yaml`; tests run on every push and must pass before Render deploys |
+
+**Contents:** [Architecture](#architecture) · [Run it locally](#run-it-locally) · [AI](#ai-intent-check-and-shopping-agent-claude) ·
+[Money safety](#money-safety) · [Payment monitor](#payment-monitor-ag-grid) · [Deploy](#deploy-to-render) · [Tests](#tests) · [Files](#files)
 
 ## Architecture
 ![ScopePay architecture](docs/architecture.png)
@@ -20,13 +42,13 @@ payment against the code's rules and the AI intent check, then settles through t
 Payouts) or the PYUSD escrow rail, and writes a signed evidence record either way. The AG Grid monitor shows the ledger,
 and Zapier can start agent shopping runs through a token-protected webhook.
 
-## Run the demo
+## Run it locally
 ```bash
-cd ~/Code/hackathons/paypal
+git clone https://github.com/tahaeg1k/pay_code_repo_2953.git && cd pay_code_repo_2953
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # sandbox Client ID + Secret (app must have Vault enabled)
-uvicorn app:app --port 8001 --reload   # or just double-click PayCodes.command
+uvicorn app:app --port 8001 --reload   # or just on a Mac, double-click PayCodes.command
 ```
 - Wallet: http://localhost:8001  (link PayPal, generate codes, see activity)
 - Demo store: http://localhost:8001/store  (basket + Fast Pay with a code)
@@ -38,9 +60,9 @@ Runs simulated by default (same rules as the contract). For real Sepolia transac
 `pip install web3`, and fill the escrow section of `.env`.
 
 ## Website
-- `/`, `/demo`, `/blog`: site from `static/site.html`
-- `/preview`, `/preview/demo`, `/preview/blog`: alternative design in `static/site/` (home, demo tab wrapping the live app, blog)
-- `/wallet`, `/store?m=greenleaf`, `/evidence/<id>`: the working app
+- `/preview`, `/preview/demo`, `/preview/blog`: the site shown in the demo (`static/site/`: home, demo tab wrapping the live app, blog)
+- `/wallet`, `/store?m=greenleaf`, `/dashboard`, `/evidence/<id>`: the app pages on their own
+- `/`, `/demo`, `/blog`: an earlier single-page version of the site (`static/site.html`)
 
 ## AI: intent check and shopping agent (Claude)
 Add `OPENROUTER_API_KEY` (OpenRouter's Anthropic-compatible endpoint, models `anthropic/claude-haiku-5.5` and
@@ -59,7 +81,7 @@ Add `OPENROUTER_API_KEY` (OpenRouter's Anthropic-compatible endpoint, models `an
   The code stays inside the tool layer, so the model never sees it. Prices come from the shop's catalog, not the agent.
 - **MCP server.** Let Claude Desktop (or any MCP client) shop with a code. Add to `claude_desktop_config.json`:
   ```json
-  {"mcpServers": {"scopepay": {"command": "python3", "args": ["/Users/you/Code/hackathons/paypal/mcp_server.py"],
+  {"mcpServers": {"scopepay": {"command": "python3", "args": ["/path/to/pay_code_repo_2953/mcp_server.py"],
                                "env": {"SCOPEPAY_URL": "http://localhost:8001"}}}}
   ```
 
@@ -121,7 +143,7 @@ The free plan sleeps when idle and resets local files on restart, so the demo le
 `.github/workflows/ci.yml` runs the test suite on every push and pull request, checks the OpenAPI spec builds, and
 uploads `openapi.json` as a build artifact.
 
-## Zapier automations
+## Zapier automations (optional)
 A Zap can start the shopping agent, for example "new row in a shopping-list sheet → buy it":
 **Webhooks by Zapier → POST** to `https://<service>.onrender.com/api/automations/agent-run`, header
 `X-ScopePay-Token: <AUTOMATION_TOKEN>`, JSON body `{"task": "Vegetarian groceries for two, about £15", "code": "SP-…"}`.
@@ -129,7 +151,7 @@ A Zap can start the shopping agent, for example "new row in a shopping-list shee
 - Answers at once with a `run_id` and `status_url`; add `"wait": true` to get the agent's result in the same call.
 - Each trigger is written to the evidence trail (`automation_triggered`, with the code's last 4 characters only).
 
-## API and SDKs (APIMatic)
+## API and SDKs (optional, APIMatic)
 FastAPI publishes the API at `/openapi.json` (interactive docs at `/docs`), limited to the JSON API and grouped by tags.
 To generate client SDKs, import that URL (or the `openapi` CI artifact) into APIMatic.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Double-click in Finder to start ScopePay and open the wallet + demo store in your browser.
 cd "$(dirname "$0")"
-PORT=8001   # 8000 is used by the SmartRefund practice app
+PORT=8001
 
 if [ ! -f .env ]; then
   echo "No .env found. Copy .env.example to .env and add your PayPal sandbox Client ID + Secret."
