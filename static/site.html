@@ -49,7 +49,7 @@ article{max-width:720px}article p,article li{font-size:17px}article h2{font-size
 @media(max-width:860px){.hero,.grid2,.mafia{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}.phone{margin:0 auto}.tabs a{margin-left:12px;font-size:14px}.step{grid-template-columns:44px 1fr}.step .btn{grid-column:2}}
 </style></head><body>
 <nav class="top"><div class="wrap"><a class="logo" href="/" onclick="go('home');return false"><i>S</i>ScopePay</a>
-<div class="tabs"><a href="/" data-t="home" onclick="go('home');return false">Home</a><a href="/demo" data-t="demo" onclick="go('demo');return false">Demo</a><a href="/blog" data-t="blog" onclick="go('blog');return false">Blog</a><a href="/wallet" style="margin-left:22px" class="btn" target="_blank">Open wallet</a></div></div></nav>
+<div class="tabs"><a href="/" data-t="home" onclick="go('home');return false">Home</a><a href="/demo" data-t="demo" onclick="go('demo');return false">Demo</a><a href="/blog" data-t="blog" onclick="go('blog');return false">Blog</a><a href="/dashboard" style="margin-left:22px" target="_blank">Monitor</a><a href="/wallet" style="margin-left:12px" class="btn" target="_blank">Open wallet</a></div></div></nav>
 
 <!-- ============ HOME ============ -->
 <div class="page" id="home">
@@ -150,6 +150,7 @@ article{max-width:720px}article p,article li{font-size:17px}article h2{font-size
   <div class="step"><div class="n">3</div><div><h3>Fast Pay at Greenleaf Grocer</h3><span class="muted">Fill a basket, paste the code. Under the cap it's paid into the merchant's PayPal; over it, declined with a reason.</span></div><a class="btn ghost" href="/store?m=greenleaf" target="_blank">Shop groceries</a></div>
   <div class="step"><div class="n">4</div><div><h3>Try the merchant lock</h3><span class="muted">Use a Greenleaf-only code at Northside Electronics and watch it get refused.</span></div><a class="btn ghost" href="/store?m=northside" target="_blank">Shop electronics</a></div>
   <div class="step"><div class="n">5</div><div><h3>Open the evidence</h3><span class="muted">Every payment links to a printable evidence record. Pay with the PYUSD rail to try dispute, refund and release.</span></div><a class="btn ghost" href="/wallet#activity" target="_blank">See activity</a></div>
+  <div class="step"><div class="n">6</div><div><h3>Watch the payment monitor</h3><span class="muted">AG Grid tables of every attempt, code and evidence record, side by side with the PayPal account's own transactions from Transaction Search.</span></div><a class="btn ghost" href="/dashboard" target="_blank">Open monitor</a></div>
 
   <h2 style="font-size:30px;margin-top:56px">What's built</h2>
   <table class="status">

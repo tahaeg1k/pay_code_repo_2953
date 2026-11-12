@@ -17,7 +17,7 @@
 </style></head><body class="dash">
 <header><b>ScopePay</b><nav><a href="/wallet">Wallet</a><a class="on" href="/dashboard">Monitor</a><a href="/store?m=greenleaf" target="_blank">Greenleaf Grocer ↗</a><a href="/docs" target="_blank">API ↗</a></nav></header>
 <main>
-  <div class="pagehead"><div><h1>Payment monitor</h1><p>Every code, payment attempt and evidence record, live from the ScopePay ledger. Built with AG Grid.</p></div><span id="chain"></span></div>
+  <div class="pagehead"><div><h1>Payment monitor</h1><p>Every code, payment attempt and evidence record from the ScopePay ledger, next to the PayPal account's own transactions. Built with <a href="https://www.ag-grid.com" target="_blank">AG Grid</a>: sort, filter and page through any table.</p></div><span id="chain"></span></div>
   <div class="kpis" id="kpis"></div>
   <div id="err"></div>
 
@@ -29,6 +29,13 @@
   <section>
     <div class="sechead"><h2>Payment attempts</h2><div class="tabs" id="filters"></div></div>
     <div id="txGrid" class="gridbox"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>Straight from PayPal</h2><div class="tabs"><small id="ppnote"></small><button class="small" id="ppref">Refresh from PayPal</button></div></div>
+    <p class="muted" style="margin:-4px 0 10px">The sandbox account's own records from PayPal's Transaction Search API, matched to ScopePay's evidence by invoice id. PayPal can take up to 3 hours to list a new transaction.</p>
+    <div class="kpis" id="ppkpis" style="margin:10px 0"></div>
+    <div id="ppGrid" class="gridbox"></div>
   </section>
 
   <section>
@@ -91,6 +98,28 @@ const evGrid=make('evGrid',[
  {field:'signed',headerName:'Signed',cellDataType:false,valueFormatter:p=>p.value?'✓ Ed25519':'—',width:105},
  {field:'id',headerName:'Record',cellRenderer:evLink,width:140}]);
 
+const ppGrid=make('ppGrid',[
+ {field:'date',headerName:'PayPal time',valueFormatter:p=>time(p.value),sort:'desc',width:150,filter:false},
+ {field:'transaction_id',headerName:'PayPal transaction',width:180},
+ {field:'event_code',headerName:'Event',width:95,tooltipValueGetter:p=>({T0006:'Payment (vaulted / checkout)',T0001:'Payout',T1107:'Refund',T0400:'Withdrawal'}[p.value]||p.value)},
+ {field:'status',headerName:'Status',width:90,valueFormatter:p=>({S:'success',P:'pending',V:'reversed',D:'denied'}[p.value]||p.value)},
+ {field:'amount',headerName:'Amount',valueFormatter:p=>`${Number(p.value).toFixed(2)} ${p.data.currency||''}`,type:'rightAligned',width:120,filter:'agNumberColumnFilter'},
+ {field:'fee',headerName:'Fee',valueFormatter:p=>p.value?Number(p.value).toFixed(2):'',type:'rightAligned',width:85},
+ {field:'items',headerName:'Line items (from PayPal)',flex:1,minWidth:220,tooltipField:'items'},
+ {field:'match',headerName:'ScopePay match',width:140,cellRenderer:pill},
+ {field:'scopepay_evidence',headerName:'Evidence',cellRenderer:evLink,width:130}]);
+async function loadPayPal(refresh){
+  $('ppnote').textContent='Asking PayPal…';
+  try{const d=await fetch('/api/paypal/activity'+(refresh?'?refresh=true':'')).then(r=>r.json());
+    if(d.error){$('ppnote').textContent=d.error;ppGrid.setGridOption('rowData',[]);return}
+    ppGrid.setGridOption('rowData',d.rows.map((r,i)=>({...r,_id:(r.transaction_id||'')+i})));
+    const m=d.rows.filter(r=>r.match=='matched').length;
+    $('ppkpis').replaceChildren(...d.balances.map(b=>kpi(`PayPal balance (${b.currency})`,Number(b.total).toFixed(2),'ok')),
+      kpi('PayPal transactions (30 days)',d.rows.length), kpi('Matched to ScopePay evidence',`${m} of ${d.rows.length}`,m?'ok':''));
+    $('ppnote').textContent='Fetched '+time(d.fetched_at);
+  }catch(e){$('ppnote').textContent='Could not reach PayPal through the server.'}}
+$('ppref').onclick=()=>loadPayPal(true);
+
 let filter='ALL';
 const FILTERS=['ALL','APPROVED','DECLINED','HELD','REFUNDED'];
 $('filters').innerHTML=FILTERS.map(f=>`<button class="small${f==filter?' on':''}" data-f="${f}">${f=='ALL'?'All':f.charAt(0)+f.slice(1).toLowerCase()}</button>`).join('');
@@ -122,5 +151,5 @@ async function load(){
     $('err').innerHTML='';
   }catch(e){$('err').innerHTML='<div class="notice bad">Could not reach the ScopePay server. Retrying…</div>'}
 }
-load();setInterval(load,5000);
+load();setInterval(load,5000);loadPayPal(false);
 </script></body></html>

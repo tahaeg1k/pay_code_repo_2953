@@ -15,11 +15,13 @@
     <li><b>Generate a code</b>Set a cap, an expiry and optionally lock it to one shop. Copy the code.</li>
     <li><b>Shop and pay</b>Open Greenleaf Grocer, fill a basket, paste the code and press Fast Pay.</li>
     <li><b>Break a rule</b>Go over the cap or use the code at Northside. Open the evidence record to see why it was declined.</li>
+    <li><b>Watch the monitor</b>Every attempt, code and evidence record in AG Grid tables, matched to the PayPal account's own transactions.</li>
   </ol>
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-src="/wallet">Wallet</button>
     <button role="tab" aria-selected="false" data-src="/store?m=greenleaf">Greenleaf Grocer</button>
     <button role="tab" aria-selected="false" data-src="/store?m=northside">Northside Electronics</button>
+    <button role="tab" aria-selected="false" data-src="/dashboard">Monitor (AG Grid)</button>
     <a class="btn" style="margin-left:auto;align-self:center;padding:9px 14px;margin-bottom:6px" id="newtab" href="/wallet" target="_blank">Open in new tab</a>
   </div>
   <div class="frame"><iframe id="app" src="/wallet" title="ScopePay demo"></iframe></div>

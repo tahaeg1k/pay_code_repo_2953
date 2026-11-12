@@ -1,7 +1,24 @@
-# PayCodes — PayPal AI Hackathon
+# ScopePay — PayPal AI Hackathon
 
 Disposable payment codes backed by your PayPal: spending cap, expiry, single or multi-use.
 Link PayPal once (Vault), generate a code, pay at a merchant with no PayPal popup.
+Give the code to an AI agent instead of your PayPal login: it can only spend within the code's rules.
+
+**Live demo:** https://scopepay-w7w7.onrender.com (PayPal sandbox, no real money; the first load can take ~50 s while the free instance wakes up)
+- Wallet: https://scopepay-w7w7.onrender.com/wallet
+- Shop: https://scopepay-w7w7.onrender.com/store?m=greenleaf
+- Payment monitor (AG Grid): https://scopepay-w7w7.onrender.com/dashboard
+- API docs: https://scopepay-w7w7.onrender.com/docs
+
+**Demo video:** _link added at submission_
+
+## Architecture
+![ScopePay architecture](docs/architecture.png)
+
+Claude plans purchases and reaches ScopePay through the local MCP server. The FastAPI backend on Render checks every
+payment against the code's rules and the AI intent check, then settles through the PayPal sandbox (Vault v3, Orders v2,
+Payouts) or the PYUSD escrow rail, and writes a signed evidence record either way. The AG Grid monitor shows the ledger,
+and Zapier can start agent shopping runs through a token-protected webhook.
 
 ## Run the demo
 ```bash
@@ -86,6 +103,9 @@ Add `OPENROUTER_API_KEY` (OpenRouter's Anthropic-compatible endpoint, models `an
 ## Payment monitor (AG Grid)
 `/dashboard` shows every payment attempt, code, held payment and evidence record in AG Grid tables (sort, filter,
 paginate), with headline numbers and the trail's integrity, refreshing every 5 seconds.
+A "Straight from PayPal" grid reads the sandbox account's own transactions and balances (Transaction Search API) and
+matches each one to its ScopePay evidence record by invoice id. Turn on **Transaction search** for the app in the PayPal
+Developer Dashboard (Apps & Credentials → your app → Features); PayPal can take up to 3 hours to list a new transaction.
 
 ## Deploy to Render
 1. Push to GitHub, then in Render: **New → Blueprint** → pick the repo. `render.yaml` sets everything up.

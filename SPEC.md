@@ -113,3 +113,7 @@ YouTube demo under 3 min, no third-party trademarks or music.
   (title "ScopePay API" 0.3.0) for APIMatic. Not done on purpose: AI creating its own codes (step 4 as written), remote MCP.
   Verified live on localhost: dashboard renders real data, /healthz, /openapi.json (25 paths, no pages), 503 without
   AUTOMATION_TOKEN. Endpoint tests in tests/test_deploy.py run where FastAPI is installed (CI, the Mac).
+- AG Grid + PayPal data (Nov 12): GET /api/paypal/activity (Transaction Search + balances, 60 s cache, rows matched to
+  evidence by invoice_id = evidence id); dashboard "Straight from PayPal" grid and balance KPIs; Monitor (AG Grid) tab on
+  /preview/demo, step 6 and nav link on the main site. Verified on localhost: grids render, PayPal call reaches the sandbox
+  and returns the "turn on Transaction search" message until that feature is enabled on the app. 68 offline tests pass.

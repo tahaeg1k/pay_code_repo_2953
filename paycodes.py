@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -878,6 +878,56 @@ def handle_paypal_event(event):
                                       "rail": "paypal", "detail": f"{etype.split('.')[-1].lower()} in PayPal · £{restore:.2f} back on the code"})
         _append_evidence(d, record)
     return {"ok": True, "matched": bool(rec), **{k: record.get(k) for k in ("budget_restored", "ref")}}
+
+
+# ---------- PayPal's own view: Transaction Search + balances (for the AG Grid monitor) ----------
+_PAYPAL_VIEW = {"at": 0.0, "data": None}
+
+
+def paypal_activity(days=30, refresh=False):
+    """Read the sandbox account's transactions and balances straight from PayPal and match each transaction to its
+    ScopePay evidence record (orders carry invoice_id = evidence id). Needs "Transaction search" enabled on the
+    sandbox app; PayPal can take up to 3 hours to list a new transaction. Cached for 60 s."""
+    if not refresh and _PAYPAL_VIEW["data"] and time.time() - _PAYPAL_VIEW["at"] < 60:
+        return _PAYPAL_VIEW["data"]
+    end = datetime.now(timezone.utc).replace(microsecond=0)
+    start = end - timedelta(days=min(days, 31))
+    fmt = lambda t: t.strftime("%Y-%m-%dT%H:%M:%S-0000")
+    out = {"fetched_at": _now_iso(), "rows": [], "balances": [], "error": None}
+    try:
+        res = _call("GET", f"/v1/reporting/transactions?start_date={fmt(start)}&end_date={fmt(end)}"
+                           "&fields=all&page_size=100")
+    except PayPalError as e:
+        msg = str(e)
+        if "NOT_AUTHORIZED" in msg or "403" in msg:
+            msg = "Turn on Transaction search for this app in the PayPal Developer Dashboard (Apps & Credentials > your app > Features)."
+        out["error"] = msg
+        return out
+    ev = {r["id"]: r for r in _db()["evidence"] if r["type"] in ("payment_attempt", "payment_reconciled")}
+    for t in res.get("transaction_details", []):
+        info, payer, cart = t.get("transaction_info", {}), t.get("payer_info", {}), t.get("cart_info", {})
+        amt = info.get("transaction_amount", {})
+        inv = info.get("invoice_id") or ""
+        rec = ev.get(inv)
+        out["rows"].append({
+            "transaction_id": info.get("transaction_id"), "date": info.get("transaction_initiation_date"),
+            "event_code": info.get("transaction_event_code"), "status": info.get("transaction_status"),
+            "amount": float(amt.get("value") or 0), "currency": amt.get("currency_code"),
+            "fee": float((info.get("fee_amount") or {}).get("value") or 0),
+            "payer": payer.get("email_address"), "custom_id": info.get("custom_field"), "invoice_id": inv,
+            "items": ", ".join(f"{i.get('item_quantity', '1')}× {i.get('item_name', '')}" for i in cart.get("item_details", []))[:300],
+            "scopepay_evidence": rec["id"] if rec else None,
+            "scopepay_decision": (rec or {}).get("decision"),
+            "match": "matched" if rec else ("ScopePay" if inv.startswith("EV-") else "outside ScopePay")})
+    try:
+        bal = _call("GET", "/v1/reporting/balances?currency_code=ALL")
+        out["balances"] = [{"currency": b.get("currency"), "total": float((b.get("total_balance") or {}).get("value") or 0),
+                            "available": float((b.get("available_balance") or {}).get("value") or 0)}
+                           for b in bal.get("balances", [])]
+    except PayPalError:
+        pass  # balances are a bonus; the transactions still show
+    _PAYPAL_VIEW.update(at=time.time(), data=out)
+    return out
 
 
 # ---------- escrow actions (dispute / refund / release) ----------

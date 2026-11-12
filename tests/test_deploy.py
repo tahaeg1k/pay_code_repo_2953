@@ -131,3 +131,39 @@ class Endpoints(TempStore):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PayPalView(TempStore):
+    def fake(self, method, path, body=None, request_id=None):
+        if path.startswith("/v1/reporting/transactions"):
+            return {"transaction_details": [
+                {"transaction_info": {"transaction_id": "TX1", "transaction_event_code": "T0006", "transaction_status": "S",
+                                      "transaction_amount": {"value": "7.50", "currency_code": "GBP"}, "invoice_id": self.eid},
+                 "payer_info": {"email_address": "buyer@example.com"},
+                 "cart_info": {"item_details": [{"item_name": "Broccoli", "item_quantity": "2"}]}},
+                {"transaction_info": {"transaction_id": "TX2", "transaction_amount": {"value": "-5.00", "currency_code": "GBP"}}}]}
+        if path.startswith("/v1/reporting/balances"):
+            return {"balances": [{"currency": "GBP", "total_balance": {"value": "120.00"}, "available_balance": {"value": "100.00"}}]}
+        raise AssertionError(path)
+
+    def setUp(self):
+        super().setUp()
+        pc._PAYPAL_VIEW.update(at=0.0, data=None)
+        with pc._tx() as d:
+            self.eid = pc._append_evidence(d, {"type": "payment_attempt", "decision": "APPROVED", "request": {"amount": 7.5}})["id"]
+
+    def test_matches_paypal_transactions_to_evidence(self):
+        with mock.patch.object(pc, "_call", side_effect=self.fake) as call:
+            out = pc.paypal_activity()
+            pc.paypal_activity()  # second call within 60 s comes from the cache
+        self.assertEqual(call.call_count, 2)
+        first, second = out["rows"]
+        self.assertEqual((first["match"], first["scopepay_evidence"], first["items"]), ("matched", self.eid, "2× Broccoli"))
+        self.assertEqual(second["match"], "outside ScopePay")
+        self.assertEqual(out["balances"], [{"currency": "GBP", "total": 120.0, "available": 100.0}])
+
+    def test_explains_when_transaction_search_is_off(self):
+        with mock.patch.object(pc, "_call", side_effect=pc.PayPalError("PayPal 403: NOT_AUTHORIZED")):
+            out = pc.paypal_activity(refresh=True)
+        self.assertIn("Transaction search", out["error"])
+        self.assertEqual(out["rows"], [])

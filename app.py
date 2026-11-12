@@ -81,6 +81,12 @@ def dashboard_page():
     return FileResponse("static/dashboard.html")
 
 
+@app.get("/api/paypal/activity")
+def paypal_activity(refresh: bool = False):
+    """The PayPal sandbox account as PayPal sees it (Transaction Search + balances), matched to ScopePay evidence."""
+    return pc.paypal_activity(refresh=refresh)
+
+
 @app.get("/healthz")
 def healthz():
     """Render health check: the store is readable and the evidence chain is intact."""
@@ -374,7 +380,7 @@ def automation_run_status(run_id: str, x_scopepay_token: Optional[str] = Header(
 # Only the JSON API goes in the spec; the HTML pages and redirects are left out.
 _TAGS = [("/api/codes", "codes"), ("/api/redeem", "payments"), ("/api/agent", "agents"), ("/api/catalog", "agents"),
          ("/api/held", "approvals"), ("/api/reconcile", "approvals"), ("/api/evidence", "evidence"),
-         ("/api/escrow", "escrow"), ("/webhooks", "webhooks"), ("/api/automations", "automations")]
+         ("/api/escrow", "escrow"), ("/api/paypal", "paypal"), ("/webhooks", "webhooks"), ("/api/automations", "automations")]
 for _r in app.routes:
     _path = getattr(_r, "path", "")
     if hasattr(_r, "include_in_schema"):
