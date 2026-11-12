@@ -10,7 +10,7 @@ Give the code to an AI agent instead of your PayPal login: it can only spend wit
 - Payment monitor (AG Grid): https://scopepay-w7w7.onrender.com/dashboard
 - API docs: https://scopepay-w7w7.onrender.com/docs
 
-**Demo video:** _link added at submission_
+**Demo video (2:46):** https://youtu.be/ldKH3bfLjqI
 
 ## Architecture
 ![ScopePay architecture](docs/architecture.png)
